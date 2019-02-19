@@ -4,3 +4,5 @@
 notebooks/models/\.ipynb_checkpoints/
 
 \.idea/
+
+*.pyc
