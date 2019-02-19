@@ -1,0 +1,6 @@
+
+*.ipynb
+
+notebooks/models/\.ipynb_checkpoints/
+
+\.idea/
