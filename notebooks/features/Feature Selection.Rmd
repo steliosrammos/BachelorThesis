@@ -1,0 +1,234 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Feature Selection And Classification
+
+
+## Import Data
+
+```{python}
+import pandas as pd
+import numpy as np
+# from bokeh import 
+
+# %matplotlib notebook 
+```
+
+```{python}
+data = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/Bachelor Thesis/data/v2/data_merged_2018.csv', sep=';')
+```
+
+```{python}
+data.describe()
+data = data.fillna(data.mean().apply(lambda x: math.floor(x)))
+data.describe()
+data.to_csv('data_merged_2.csv', sep=",")
+data.head()
+```
+
+```{python}
+data_v2 = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/Bachelor Thesis/Notebooks/Data Pre-Processing V2/data_merged_2.csv', sep=',')
+data_v2.head()
+```
+
+```{python}
+X = data.iloc[:,1:-2]
+s = data.iloc[:,-2]
+y= data.iloc[:,-1]
+```
+
+```{python}
+X = X.fillna(X.mean().apply(lambda x: math.floor(x)))
+X = X.astype(np.float64)
+X.describe()
+```
+
+```{python}
+data.columns
+
+# data_2 = pd.DataFrame([X,y], columns=data.columns)
+
+# data_2 = data.drop('uuid',axis=1)
+# data_2.describe()
+
+data_2.to_csv('data_merged_2.csv', sep=";")
+```
+
+## Pipeline: Recursive Feature Elimination with Cross Validation
+
+```{python}
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, precision_score, roc_auc_score, average_precision_score
+import matplotlib.pyplot as plt
+from sklearn.svm import SVC
+from sklearn.model_selection import StratifiedKFold
+from yellowbrick.features import RFECV
+from sklearn.ensemble import RandomForestClassifier
+```
+
+```{python}
+# As descrbied here: https://ramhiser.com/post/2018-03-25-feature-selection-with-scikit-learn-pipeline/
+
+class PipelineRFE(Pipeline):
+
+    def fit(self, X, y=None, **fit_params):
+        super(PipelineRFE, self).fit(X, y, **fit_params)
+        self.feature_importances_ = self.named_steps['RFC'].feature_importances_
+        return self
+
+# Perform Feature Selection
+pipeline = [
+    ('scaler', StandardScaler()),
+    ('RFC', RandomForestClassifier(n_jobs=-1, class_weight="balanced", n_estimators=150))
+]
+```
+
+```{python}
+# Stratified cross validation for class imbalance
+cv = StratifiedKFold(2)
+
+estimator = PipelineRFE(pipeline)
+clf = RFECV(estimator, step=5, cv=cv, scoring="roc_auc")
+clf.fit(X, s)
+clf.finalize()
+
+clf_recall = RFECV(estimator, step=5, cv=cv, scoring="recall")
+clf_recall.fit(X, s)
+clf_recall.finalize()
+
+clf_accuracy = RFECV(estimator, step=5, cv=cv, scoring="accuracy")
+clf_accuracy.fit(X, s)
+clf_accuracy.finalize()
+
+clf_precision = RFECV(estimator, step=5, cv=cv, scoring="precision")
+clf_precision.fit(X, s)
+clf_precision.finalize()
+```
+
+```{python}
+# Remove the non-optimal features 
+mask = clf_accuracy.support_
+X_reduced = X.iloc[:, mask]
+X_reduced.head()
+```
+
+```{python}
+from sklearn.externals import joblib
+
+rfe_best_estimator = clf_accuracy.rfe_estimator_
+
+filename = 'rfe_best_estimator.sav'
+joblib.dump(rfe_best_estimator, filename)
+```
+
+## Classify
+
+```{python}
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score, precision_score, roc_auc_score, average_precision_score, recall_score
+```
+
+```{python}
+def find_best_params_rfc(X_train, X_test, s_train, s_test):
+
+    # Parameters for the grid search 
+    parameters = {
+        'n_jobs': [-1],
+        'n_estimators':[100, 150,200],
+        'class_weight':['balanced'],
+    #     'RFC__':[],
+    }
+
+    RFC = RandomForestClassifier()
+    grid = GridSearchCV(RFC, param_grid=parameters, cv=StratifiedKFold(5), scoring="roc_auc",verbose=0)
+    grid.fit(X_train, s_train)
+    
+    predicted_s = grid.predict(X_test)
+    
+    print(
+        'Best parameters: {}'.format(grid.best_params_),
+        'Accuracy {}'.format(accuracy_score(s_test, predicted_s)),
+        'Precision {}'.format(precision_score(s_test, predicted_s)),
+        'ROC {}'.format(roc_auc_score(s_test, predicted_s)),
+        'Average precision-recall score: {0:0.2f}'.format(average_precision_score(s_test, predicted_s))
+    )
+    
+    return grid
+```
+
+```{python}
+def classify(classifier, X_train, proba = False):
+    
+    if proba:
+        predicted = classifier.predict_proba(X_train)
+    else:
+        predicted= classifier.predict(X_train)
+    
+    return predicted
+```
+
+###  Classifier S 
+
+```{python}
+X_train, X_test, s_train, s_test = train_test_split(X_reduced, s, test_size=0.4, stratify=s)
+```
+
+```{python}
+best_clf = find_best_params_rfc(X_train, X_test, s_train, s_test)
+```
+
+```{python}
+# Find the best cut-off value to optimize ROC AUC score:
+
+predicted_proba_s = classify(best_clf, X_test, True)
+
+roc_scores = []
+accuracy_scores = []
+precision_scores = []
+recall_scores = []
+
+cutoffs = range(1, 10, 1)
+
+for cutoff in cutoffs:
+    predicted_s = (predicted_proba_s[:,1] >= (cutoff/10)).astype(int)
+    
+    # Calculate scores
+    roc_scores.append(roc_auc_score(s_test, predicted_s))
+    accuracy_scores.append(accuracy_score(s_test, predicted_s))
+    precision_scores.append(precision_score(s_test, predicted_s))
+    recall_scores.append(recall_score(s_test, predicted_s))
+```
+
+```{python}
+from bokeh.plotting import figure, output_notebook, show
+
+output_notebook()
+
+p = figure()
+p.line(cutoffs, roc_scores)
+p.line(cutoffs, accuracy_scores,  color="purple")
+p.line(cutoffs, precision_scores,  color="red")
+p.line(cutoffs, recall_scores,  color="green")
+# p.axis.x_axis_label('Cutof f value')
+
+show(p)
+```
