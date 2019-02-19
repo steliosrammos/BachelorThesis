@@ -22,14 +22,42 @@ from sklearn.externals import joblib
 
 
 def save_model(classifier, filename):
-    try:
-        filename = filename+'.sav'
-        joblib.dump(classifier, filename)
-    finally:
-        print('Failed to save the classifier!')
-        return False
+    # try:
+    filename = filename+'.sav'
+    joblib.dump(classifier, filename)
 
-    return True
+    #     print('Failed to save the classifier!')
+    #     return False
+    #
+    # return True
+
+
+def load_model(filename):
+    model = joblib.load(filename)
+    return model
+
+
+def get_metrics(predicted_s, proba_predicted_s, y_test):
+    accuracy = accuracy_score(y_test, predicted_s)
+    precision = precision_score(y_test, predicted_s)
+    recall = recall_score(y_test, predicted_s)
+    roc_score = roc_auc_score(y_test, proba_predicted_s)
+
+    print(
+        'Accuracy: {} \n'.format(accuracy),
+        'Precision: {} \n'.format(precision),
+        'Recall: {} \n'.format(recall),
+        'ROC AUC: {} \n'.format(roc_score)
+    )
+
+
+def compute_corr_coef(prob_s, prob_predicted_s):
+    corr_coeff = np.zeros(prob_predicted_s.shape[0])
+
+    for i in range(0, prob_predicted_s.shape[0]):
+        corr_coeff[i] = prob_s / prob_predicted_s[i]
+
+    return corr_coeff
 
 
 def get_best_rfc_estimator(X_train, X_test, y_train, y_test, verbose=False):
