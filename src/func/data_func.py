@@ -14,7 +14,6 @@ def import_data(format=None):
     s = data.iloc[:, -2]
     y = data.iloc[:, -1]
 
-    print(y.value_counts())
     X = X.fillna(X.mean().apply(lambda x: math.floor(x)))
     y.loc[s == 0] = np.nan
 
