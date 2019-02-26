@@ -6,3 +6,19 @@ notebooks/models/\.ipynb_checkpoints/
 \.idea/
 
 *.pyc
+
+data/processed/\.DS_Store
+
+reports/\.DS_Store
+
+references/\.DS_Store
+
+references/h2o/\.DS_Store
+
+reports/figures/\.DS_Store
+
+notebooks/models/\.DS_Store
+
+notebooks/\.DS_Store
+
+\.DS_Store
