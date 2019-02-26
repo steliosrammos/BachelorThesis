@@ -1,0 +1,140 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# H2O AutoML Binary Classification Demo
+
+This is a [Jupyter](https://jupyter.org/) Notebook. When you execute code within the notebook, the results appear beneath the code. To execute a code chunk, place your cursor on the cell and press *Shift+Enter*. 
+
+### Start H2O
+
+Import the **h2o** Python module and `H2OAutoML` class and initialize a local H2O cluster.
+
+```{python}
+import h2o
+from h2o.automl import H2OAutoML
+h2o.init()
+```
+
+### Load Data
+
+For the AutoML binary classification demo, we use a subset of the [Product Backorders](https://www.kaggle.com/tiredgeek/predict-bo-trial/data) dataset.  The goal here is to predict whether or not a product will be put on backorder status, given a number of product metrics such as current inventory, transit time, demand forecasts and prior sales.
+
+```{python}
+# Use local data file or download from GitHub
+import os
+docker_data_path = "/home/h2o/data/automl/product_backorders.csv"
+if os.path.isfile(docker_data_path):
+  data_path = docker_data_path
+else:
+  data_path = "https://github.com/h2oai/h2o-tutorials/raw/master/h2o-world-2017/automl/data/product_backorders.csv"
+
+
+# Load data into H2O
+df = h2o.import_file(data_path)
+```
+
+For classification, the response should be encoded as categorical (aka. "factor" or "enum"). Let's take a look.
+
+```{python}
+df.describe()
+```
+
+We will notice that the response column, `"went_on_backorder"`, is already encoded as "enum", so there's nothing we need to do here.  If it were encoded as a 0/1 "int", then we'd have to convert the column as follows:  `df[y] = df[y].asfactor()`
+
+
+Next, let's identify the response & predictor columns by saving them as `x` and `y`.  The `"sku"` column is a unique identifier so we'll want to remove that from the set of our predictors.
+
+```{python}
+y = "went_on_backorder"
+x = df.columns
+x.remove(y)
+x.remove("sku")
+```
+
+## Run AutoML 
+
+Run AutoML, stopping after 10 models.  The `max_models` argument specifies the number of individual (or "base") models, and does not include the two ensemble models that are trained at the end.
+
+```{python}
+aml = H2OAutoML(max_models = 10, seed = 1)
+aml.train(x = x, y = y, training_frame = df)
+```
+
+*Note: If you see the following error, it means that you need to install the pandas module.*
+```
+H2OTypeError: Argument `python_obj` should be a None | list | tuple | dict | numpy.ndarray | pandas.DataFrame | scipy.sparse.issparse, got H2OTwoDimTable 
+``` 
+
+
+## Leaderboard
+
+Next, we will view the AutoML Leaderboard.  Since we did not specify a `leaderboard_frame` in the `H2OAutoML.train()` method for scoring and ranking the models, the AutoML leaderboard uses cross-validation metrics to rank the models.  
+
+A default performance metric for each machine learning task (binary classification, multiclass classification, regression) is specified internally and the leaderboard will be sorted by that metric.  In the case of binary classification, the default ranking metric is Area Under the ROC Curve (AUC).  In the future, the user will be able to specify any of the H2O metrics so that different metrics can be used to generate rankings on the leaderboard.
+
+The leader model is stored at `aml.leader` and the leaderboard is stored at `aml.leaderboard`.
+
+```{python}
+lb = aml.leaderboard
+```
+
+Now we will view a snapshot of the top models.  Here we should see the two Stacked Ensembles at or near the top of the leaderboard.  Stacked Ensembles can almost always outperform a single model.
+
+```{python}
+lb.head()
+```
+
+To view the entire leaderboard, specify the `rows` argument of the `head()` method as the total number of rows:
+
+```{python}
+lb.head(rows=lb.nrows)
+```
+
+## Ensemble Exploration
+
+To understand how the ensemble works, let's take a peek inside the Stacked Ensemble "All Models" model.  The "All Models" ensemble is an ensemble of all of the individual models in the AutoML run.  This is often the top performing model on the leaderboard.
+
+```{python}
+# Get model ids for all models in the AutoML Leaderboard
+model_ids = list(aml.leaderboard['model_id'].as_data_frame().iloc[:,0])
+# Get the "All Models" Stacked Ensemble model
+se = h2o.get_model([mid for mid in model_ids if "StackedEnsemble_AllModels" in mid][0])
+# Get the Stacked Ensemble metalearner model
+metalearner = h2o.get_model(se.metalearner()['name'])
+```
+
+Examine the variable importance of the metalearner (combiner) algorithm in the ensemble.  This shows us how much each base learner is contributing to the ensemble. The AutoML Stacked Ensembles use the default metalearner algorithm (GLM with non-negative weights), so the variable importance of the metalearner is actually the standardized coefficient magnitudes of the GLM. 
+
+```{python}
+metalearner.coef_norm()
+```
+
+We can also plot the base learner contributions to the ensemble.
+
+```{python}
+# %matplotlib inline
+metalearner.std_coef_plot()
+```
+
+## Save Leader Model
+
+There are two ways to save the leader model -- binary format and MOJO format.  If you're taking your leader model to production, then we'd suggest the MOJO format since it's optimized for production use.
+
+```{python}
+h2o.save_model(aml.leader, path = "./product_backorders_model_bin")
+```
+
+```{python}
+aml.leader.download_mojo(path = "./")
+```
