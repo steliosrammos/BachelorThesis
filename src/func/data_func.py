@@ -2,9 +2,10 @@ import pandas as pd
 import numpy as np
 import math
 
+
 def import_data(format=None):
     data = pd.read_csv(
-        '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/data_2018.csv',
+        '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_2018.csv',
         sep=';')
     # data.head()
 
