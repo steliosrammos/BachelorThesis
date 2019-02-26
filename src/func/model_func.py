@@ -8,10 +8,9 @@ from sklearn.preprocessing import StandardScaler
 
 from sklearn.model_selection import GridSearchCV
 from sklearn.feature_selection import RFECV
-from yellowbrick.features import RFECV as RFECViz
+# from yellowbrick.features import RFECV as RFECViz
 
 from sklearn.ensemble import RandomForestClassifier
-# from costcla.models import CostSensitiveRandomForestClassifier
 
 from sklearn.calibration import calibration_curve, CalibratedClassifierCV
 from src.models.VennABERS import ScoresToMultiProbs
@@ -51,7 +50,7 @@ def get_metrics(predicted_s, proba_predicted_s, y_test):
     )
 
 
-def compute_corr_coef(prob_s, prob_predicted_s):
+def compute_corr_coeff(prob_s, prob_predicted_s):
     corr_coeff = np.zeros(prob_predicted_s.shape[0])
 
     for i in range(0, prob_predicted_s.shape[0]):
