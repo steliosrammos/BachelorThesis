@@ -1,0 +1,237 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Clean Up Dataset (with missing values) 2017-2018
+
+
+## Imports
+
+```{python}
+import pandas as pd
+import numpy as np
+```
+
+## Custom Functions
+
+```{python}
+# Split dataframe with object columns into df with string and float columns
+def split_object_to_string_or_float(df):
+    
+    object_df = df.astype(str)
+    
+    for column in object_df.columns:
+        if object_df[column].dtype == 'object':
+            object_df[column] = object_df[column].str.replace("[^a-zA-Z ]+|nan", "")
+    
+    size = object_df.shape[0]
+    float_columns = []
+    string_columns = []
+    
+    for column in object_df.columns:
+        is_float = (len(object_df[column].unique()) == 1)
+        if is_float:
+            float_columns.append(column)
+        else:
+            string_columns.append(column)
+            
+    string_df = object_df.drop(float_columns,axis=1)
+    float_df = df.drop(string_columns,axis=1)
+    
+    return string_df, float_df
+
+def to_float(df):
+    df = df.astype(str)
+
+    for column in df.columns:
+        try:
+            df.loc[df[column] == '-', column] = ''
+            df[column] = df[column].apply(lambda x: float(x.replace(',', '.') if x != '' else np.nan))
+        except ValueError as e:
+            print("ValueError at column {} with error {}".format(column, e))
+            pass
+        except AttributeError as e:
+            print("AttributeError at column {} with error {}".format(column, e))
+            pass
+    return df
+```
+
+## Clean Up
+
+```{python}
+data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/client_scores_2017_2018_with_null.csv", delimiter=",",low_memory=False)
+data.head()
+```
+
+### Split DataFrame's Objects type in String and Float type
+
+```{python}
+# One dataframe for columns that should be strings and one for floats
+string_series, float_series = split_object_to_string_or_float(data)
+```
+
+### Parse the float series to change the type to float
+
+```{python}
+float_series.head()
+```
+
+```{python}
+parsed_float_series = to_float(float_series)
+parsed_float_series.head()
+```
+
+### Clean up strings
+
+```{python}
+string_series['Risico'] = string_series['Risico'].replace({
+    'middelmatig':'Middelmatig',
+    'Middelmatige risico': 'Middelmatig',
+    'middelmatig risico': 'Middelmatig',
+    'Middelmatig risico':'Middelmatig',
+    'Middelmatig Risico':'Middelmatig',
+    'Hoog risico': 'Hoog',
+    'hoog': 'Hoog',
+    'Laag risico': 'Laag',
+    'laag': 'Laag'
+})
+string_series.head()
+```
+
+```{python}
+string_series['Risico'].unique()
+```
+
+```{python}
+drop_columns = ['OQ452_Rv_DrugsAlc_02', 'OQ452_Rv_DrugsAlc_03', 'OQ452_Rv_DrugsAlc_04', 'OQ452_Rv_Geweld_05', 'OQ452_Rv_Suicide_01', 'Opmerkingen', 'Vraag34']
+string_series = string_series.drop(drop_columns, axis=1)
+```
+
+### Map Categories
+
+```{python}
+def get_categories(df):
+    uniques = []
+    categories = pd.DataFrame()
+    
+    for column in df.columns:
+        uniques.append({
+            column: df[column].unique()
+        })
+
+    for unique in uniques:
+        for key, val in unique.items():
+            for i in range(0,len(val)):
+                categories.loc[i, key] = val[i]
+
+    return categories
+```
+
+```{python}
+get_categories(string_series_tmp)
+```
+
+```{python}
+map_1 = {'Zeer laag':1, 'Laag':2, 'Beneden Gemiddeld':3, 'Gemiddeld':4, 'Boven Gemiddeld':5, 'Hoog':6, 'Zeer hoog':7, '':''} #0 to 8, 10 to 18 
+map_2 = {'Minimale symptomen':1, 'Lichte symptomen':2, 'Matige symptomen':3, 'Ernstige symptomen':4} # 9
+map_3 = {'Subklinisch':1, 'Hoog':2}
+map_4 = {'Milde Reactie': 1}
+map_5 = {'Negatief': -1, 'Onduidelijk':0, 'Negatief':1}
+map_6 = {'Laag':1, 'Middelmatig': 2, 'Hoog':3}
+map_7 = {'Subklinisch':1, 'Milde':2, 'Gemiddeld':2, 'Ernstig':3, 'Zeer Ernstig':4}
+map_8 = {'Milde Reactie':1, 'Forse Reactie':2}
+# map_ = {'Laag risico':1, 'Middelmatig risico':2, 'Hoog risico':3}
+```
+
+```{python}
+columns = string_series.columns
+string_series_tmp = string_series.copy()
+parsed_string_series = string_series.copy()
+
+for i in range(0, len(columns)):
+    if i==9:
+        parsed_string_series.iloc[:, i] = string_series.iloc[:, i].map(map_2)
+        string_series_tmp = string_series_tmp.drop(columns[i], axis=1)
+    elif i==43 or i == 48 or i==69 or i==81:
+        parsed_string_series.iloc[:, i] = string_series.iloc[:, i].map(map_3)
+        string_series_tmp = string_series_tmp.drop(columns[i], axis=1)
+    elif i==46:
+        parsed_string_series.iloc[:, i] = string_series.iloc[:, i].map(map_4)
+        string_series_tmp = string_series_tmp.drop(columns[i], axis=1)
+    elif i==59:
+        parsed_string_series.iloc[:, i] = string_series.iloc[:, i].map(map_5)
+        string_series_tmp = string_series_tmp.drop(columns[i], axis=1)
+    elif i==68:
+        parsed_string_series.iloc[:, i] = string_series.iloc[:, i].map(map_6)
+        string_series_tmp = string_series_tmp.drop(columns[i], axis=1)
+    elif i==82:
+        parsed_string_series.iloc[:, i] = string_series.iloc[:, i].map(map_7)
+        string_series_tmp = string_series_tmp.drop(columns[i], axis=1)
+    elif i==88:
+        parsed_string_series.iloc[:, i] = string_series.iloc[:, i].map(map_8)
+        string_series_tmp = string_series_tmp.drop(columns[i], axis=1)
+    else:
+        parsed_string_series.iloc[:, i] = string_series.iloc[:, i].map(map_1)
+        string_series_tmp = string_series_tmp.drop(columns[i], axis=1)
+```
+
+```{python}
+parsed_string_series = to_float(parsed_string_series)
+```
+
+```{python}
+parsed_string_series.head()
+```
+
+### Merge back into single dataframe
+
+```{python}
+merged_df = pd.concat([parsed_string_series, parsed_float_series], axis=1)
+merged_df.head()
+```
+
+```{python}
+merged_df['Act_Raw_Score'] = merged_df['Act_Raw_Score'].replace('-', 'nan')
+```
+
+```{python}
+for column in merged_df.columns:
+    merged_df[column] = merged_df[column].apply(lambda x: np.nan if x == 'nan' else x) 
+# get_categories(merged_df)
+```
+
+### Fix last problematic (object) columns
+
+```{python}
+objects = merged_df.select_dtypes(include=['object'])
+```
+
+```{python}
+# objects.loc[objects.iloc[:,0] == 'nan',0] = np.nan
+```
+
+```{python}
+parsed_objects = to_float(objects)
+```
+
+```{python}
+merged_df[parsed_objects.columns] = parsed_objects
+```
+
+```{python}
+merged_df.head()
+```
+
+```{python}
+merged_df.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/pivoted_scores_2017_2018_with_null.csv', sep=";", index=False)
+```

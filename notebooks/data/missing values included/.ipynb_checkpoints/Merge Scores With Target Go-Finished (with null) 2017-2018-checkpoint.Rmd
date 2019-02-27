@@ -1,0 +1,75 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Merge Scores With Target Go And Finished (with null) 2017-2018
+
+## Imports
+
+```{python}
+import pandas as pd
+import numpy as np
+```
+
+## Merge scores with targets
+
+
+### Load Scores
+
+```{python}
+scores = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/pivoted_scores_2017_2018_with_null.csv', sep=";")
+scores.head()
+```
+
+```{python}
+scores.info()
+```
+
+### Load Targets
+
+```{python}
+targets = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/clients_go_nogo_finished.csv', sep=";", low_memory=False)
+targets.client_id = targets.client_id.astype(float)
+targets.head()
+```
+
+```{python}
+targets.info()
+```
+
+### Merge the two
+
+```{python}
+data = scores.merge(targets, on='client_id')
+data.head()
+```
+
+```{python}
+data.shape
+```
+
+```{python}
+data.info()
+```
+
+```{python}
+scores.client_id[~scores.client_id.isin(data.client_id)]
+```
+
+```{python}
+targets.client_id.sort_values()
+```
+
+```{python}
+
+```
