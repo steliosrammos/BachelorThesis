@@ -69,8 +69,10 @@ pivoted_df.head()
 ```
 
 ```{python}
-pivoted_df.to_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/client_scores_2017_2018_with_null.csv")
+# pivoted_df.to_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/client_scores_2017_2018_with_null.csv")
 ```
+
+## Clean Up Data
 
 ```{python}
 
