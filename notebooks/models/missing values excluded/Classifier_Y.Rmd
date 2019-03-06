@@ -1,0 +1,250 @@
+---
+
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Setup Notebook
+
+```{python}
+# Turn off autosave for cleaner version control with jupytext and enable autoreloading of modules before running code
+# %autosave 0
+# %load_ext autoreload
+# %matplotlib notebook
+# %autoreload 2
+```
+
+# Building Classifier Y
+
+
+## Import Libraries
+
+```{python}
+# Python libraries
+import sys
+import pandas as pd
+import math
+import matplotlib.pyplot as pl
+
+# Custom functions
+from src.func.model_func import load_model
+from src.func.model_func import compute_corr_coeff
+from src.func.data_func import import_data
+
+# H2O functions
+import h2o
+from h2o.estimators.gbm import H2OGradientBoostingEstimator as GBM
+from h2o.grid.grid_search import H2OGridSearch
+import matplotlib.pyplot as plt
+```
+
+## Custom functions
+
+
+The function `get_models
+
+```{python}
+def get_mcc(model, parameters):
+    print("Model {}: \n".format(model.model_id))
+    print('Training score: {}'.format(model.mcc(train=True)))
+    print('Validation score: {} \n'.format(model.mcc(valid=True)))
+
+    if parameters:
+        print("Model Parameters: \n")
+        
+        for key, value in enumerate(hyper_parameters):
+            print("{}: {}".format(value, g.params[value]))
+
+    print("\n ######################################################################## \n")
+
+def get_models_mcc(models, parameters=False):
+
+    print("######################################################################## \n")
+    
+    if models is list:
+        for model in models:
+            get_mcc(model, parameters)
+    else:
+        get_mcc(models, parameters)
+```
+
+```{python}
+def get_auc(model, parameters):
+    print("Model {}: \n".format(model.model_id))
+    print('Training score: {}'.format(model.auc(train=True)))
+    print('Validation score: {} \n'.format(model.auc(valid=True)))
+
+    if parameters:
+        print("Model Parameters: \n")
+        
+        for key, value in enumerate(hyper_parameters):
+            print("{}: {}".format(value, g.params[value]))
+
+    print("\n ######################################################################## \n")
+
+def get_models_auc(models, parameters=False):
+
+    print("######################################################################## \n")
+    
+    if models is list:
+        for model in models:
+            get_auc(model, parameters)
+    else:
+        get_auc(models, parameters)
+```
+
+## Calculate Bias Correction
+
+```{python}
+classifier_s = load_model('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/models/classifier_s.sav')
+X,s,_ = import_data('numpy_array')
+
+prob_predicted_s = classifier_s.predict_proba(X)[:,1]
+
+prob_s = s[s==1].shape[0]/s.shape[0]
+corr_coeff = compute_corr_coeff(prob_s, prob_predicted_s)
+
+corr_coeff = pd.Series(corr_coeff)
+corr_coeff.head()
+```
+
+```{python}
+corr_coeff.shape
+```
+
+## Build Classifier Y
+
+```{python}
+# Initializing h2o
+h2o.init()
+```
+
+```{python echo=TRUE}
+# Import data
+data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/data_classifier_y.csv",sep=";")
+data['weights'] = corr_coeff
+
+# Swap last two columns
+columns = list(data.columns)
+columns[-2], columns[-1] = columns[-1], columns[-2]
+data.columns = columns
+
+tmp_column = data.iloc[:,-1]
+data.iloc[:,-1] = data.iloc[:,-2]
+data.iloc[:,-2] = tmp_column
+
+data.head()
+```
+
+```{python}
+data_labld = data.dropna()
+data_labld.head()
+```
+
+```{python}
+data_labld.to_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/data_classifier_y_labld_weights.csv", sep=";", index=False)
+```
+
+```{python}
+data_h2o = h2o.H2OFrame(data_labld)
+data_h2o
+```
+
+```{python}
+data.shape
+```
+
+```{python}
+# Set predictor and response column names
+predictors = data.columns[1:-2]
+
+data_h2o["finished_treatment"] = data_h2o["finished_treatment"].asfactor()
+response = "finished_treatment"
+```
+
+```{python}
+# train, calib, test, valid = data.split_frame(ratios=[0.70,0.05, 0.15], seed=1)
+train, valid, test = data_h2o.split_frame(ratios=[0.7, 0.15], seed=-1)
+```
+
+```{python}
+print("Train Frame of shape: {}".format(train.shape))
+# print("Calibration Frame of shape: {}".format(calib.shape))
+# print("Test Frame of shape: {}".format(test.shape))
+print("Validation Frame of shape: {}".format(valid.shape))
+```
+
+```{python}
+ntrees_opt = [100,150,200]
+learn_rate_opt = [0.1,0.2]
+seed = [1]
+hyper_parameters = {"ntrees": ntrees_opt,"learn_rate":learn_rate_opt,"seed":seed}
+
+gs = H2OGridSearch(GBM(weights_column="weights"), hyper_params=hyper_parameters)
+gs.train(x=predictors, y=response, training_frame=train, validation_frame=valid)
+```
+
+```{python}
+gs_ordered = gs.get_grid(sort_by='auc', decreasing=True)
+best_gbm = gs_ordered[0]
+```
+
+```{python}
+get_models_auc(best_gbm)
+```
+
+```{python}
+model_path = h2o.save_model(model=best_gbm, path="/tmp/corrected_y_classifier", force=True)
+```
+
+```{python}
+model_path
+```
+
+## Get Classifier performance
+
+```{python}
+from sklearn.metrics import roc_auc_score, accuracy_score
+```
+
+```{python}
+predictions = best_gbm.predict(test).as_data_frame()
+```
+
+```{python}
+predict_labels = predictions['predict']
+proba_predict = predictions[['p0','p1']]
+```
+
+```{python}
+true_labels = test.as_data_frame()['finished_treatment']
+```
+
+```{python}
+roc_auc_score(true_labels, proba_predict['p1'])
+```
+
+```{python}
+accuracy_score(true_labels, predict_labels)
+```
+
+```{python}
+accuracy_score(true_labels, predict_labels_adjusted)
+```
+
+```{python}
+
+```
