@@ -22,3 +22,13 @@ notebooks/models/\.DS_Store
 notebooks/\.DS_Store
 
 \.DS_Store
+
+models/corrected_classifiers_y/
+
+notebooks/models/missing values excluded/\.ipynb_checkpoints/Classifier_Y-checkpoint\.Rmd
+
+notebooks/models/missing values excluded/\.ipynb_checkpoints/Conformal Prediction Classifier Y-checkpoint\.Rmd
+
+notebooks/models/missing values included/\.ipynb_checkpoints/Create Dataset With Missing Values \(2017-2018\)-checkpoint\.Rmd
+
+notebooks/models/missing_values_included/\.ipynb_checkpoints/Create Dataset With Missing Values \(2017-2018\)-checkpoint\.Rmd
