@@ -1,0 +1,388 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Conformal Prediction with corrected Classifier Y 
+
+
+## Imports
+
+```{python}
+# General packages
+import h2o
+import pandas as pd
+import numpy as np
+
+# Scikit-learn
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import ShuffleSplit
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import roc_auc_score, accuracy_score, average_precision_score, precision_score
+from sklearn.externals import joblib
+
+# Conformal framework
+from nonconformist.cp import TcpClassifier, IcpClassifier
+from nonconformist.nc import NcFactory
+from nonconformist.base import ClassifierAdapter
+from nonconformist.nc import ClassifierNc, ClassificationErrFunc, InverseProbabilityErrFunc, MarginErrFunc
+
+# Custom functions
+# from src.func.model_func import get_best_xgb_estimator
+
+# XGBoost
+from xgboost import XGBClassifier
+import xgboost as xgb
+
+from sklearn.calibration import CalibratedClassifierCV
+
+import matplotlib.pyplot as plt
+```
+
+## Structure of the script
+
+1. Load initial instance of classifier Y (base performance: avrg ROC AUC: 0.6163 or avrg PR AUC: 0.8634)
+2. Perform conformal predictions on unlabeled data 
+3. Introduce the newly labeled data (best predictions) into the training set for classifier Y **with same distribution**
+4. Cross-Train/Evaluate the classifier Y 
+5. Repeat step 3-5 until stopping criterion is met (ROC AUC stops improving)
+
+
+## Load Data
+
+```{python}
+base_path = "/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/"
+```
+
+```{python}
+# data = h2o.import_file('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_s/data_classifier_s.csv')
+# train_data = pd.read_csv(base_path+'data/processed/classifier_y/weighted/sk_xgb_weights/classifier_y_lbld_weighted_sk_xgb_train.csv', sep=";")
+# test_data = pd.read_csv(base_path+'data/processed/classifier_y/weighted/sk_xgb_weights/classifier_y_lbld_weighted_sk_xgb_test.csv', sep=";")
+
+data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_y/weighted/sk_xgb_weights/data_classifier_y_weighted_sk_xgboost.csv", sep=";")
+data_lbld = data[~data.finished_treatment.isna()]
+data_unlbld = data[data.finished_treatment.isna()]
+```
+
+```{python}
+# Initial labeled/unlabeled
+print(data_unlbld.shape[0])
+print(data_lbld.shape[0])
+```
+
+```{python}
+# Ratio of labels
+data_lbld.finished_treatment.value_counts(True)
+```
+
+## SciKit Learn Conformal Model
+
+```{python}
+## Custom Functions ##
+
+def ccp_predict(model, X_lbld, y_lbld, X_unlbld, n_splits=10):
+    
+    sss = StratifiedShuffleSplit(n_splits=n_splits, test_size=0.2, random_state=55)
+    sss.get_n_splits(X_lbld, y_lbld)
+    
+    pred_confs = []
+    
+    for train_index, calib_index in sss.split(X_lbld, y_lbld):
+        
+        X_train, X_calib = X_lbld.iloc[train_index], X_lbld.iloc[calib_index]
+        y_train, y_calib = y_lbld.iloc[train_index], y_lbld.iloc[calib_index]
+        
+#         nc = NcFactory.create_nc(model, InverseProbabilityErrFunc())
+        nc = NcFactory.create_nc(model, MarginErrFunc())
+        icp = IcpClassifier(nc)
+        icp.fit(X_train.iloc[:, :-1], y_train)
+        icp.calibrate(X_calib.iloc[:, :-1], y_calib)
+        pred_confs.append(icp.predict(X_unlbld.iloc[:, :-1].values, significance=None))
+
+    pred_confs = np.array(pred_confs).mean(axis=0)
+    
+    return pred_confs
+
+def ccp_evaluate(model, X_lbld, y_lbld, n_splits=10):
+    
+    X_train, X_test, y_train, y_test = train_test_split(X_lbld, y_lbld, test_size=0.1, random_state=55)
+    
+    sss = StratifiedShuffleSplit(n_splits=n_splits, test_size=0.2, random_state=55)
+    sss.get_n_splits(X_train, y_train)
+    
+    accuracies = []
+    precisions = []
+    pr_aucs = []
+    pred_confs = []
+    icps = []
+    
+    for train_index, calib_index in sss.split(X_train, y_train):
+        
+        X_prop_train, X_calib = X_train.iloc[train_index], X_train.iloc[calib_index]
+        y_prop_train, y_calib = y_train.iloc[train_index], y_train.iloc[calib_index]
+
+        # Fit the model and calibrate it
+#         nc = NcFactory.create_nc(model, InverseProbabilityErrFunc())
+        nc = NcFactory.create_nc(model, MarginErrFunc())
+        icp = IcpClassifier(nc)
+        icp.fit(X_prop_train.iloc[:, :-1], y_prop_train)
+        icp.calibrate(X_calib.iloc[:, :-1], y_calib)
+        
+        # Predict the labels for scores
+        pred_labels = icp.predict_conf(X_test.iloc[:, :-1].values)[:, 0]
+        
+        accuracy = accuracy_score(y_test, pred_labels)
+        precision = precision_score(y_test, pred_labels)
+        pr_auc = average_precision_score(y_test, pred_labels)
+        
+        accuracies.append(accuracy)
+        precisions.append(precision)
+        pr_aucs.append(pr_auc)
+        icps.append(icp)
+        
+        # Predict the confidence intervals for plot
+        pred_confs.append(icp.predict(X_test.iloc[:, :-1].values, significance=None))
+        
+    # Scoring   
+    print('Average Accuracy: {}'.format(np.array(accuracies).mean()))
+    print('Average Precision: {}'.format(np.array(precisions).mean()))
+    print('Average PRAUC: {} \n'.format(np.array(pr_aucs).mean()))
+    print('Max PRAUC: {} \n'.format(np.max(pr_aucs)))
+    
+    # Ploting
+    pred_confs = np.array(pred_confs).mean(axis=0)
+    
+    best_icp = icps[np.argmax(pr_aucs)]
+    
+    return best_icp, accuracies, y_test, pred_confs
+
+def get_best_pred_indeces(predictions, confidence, true_ratio):
+    '''
+        true_ratio: num_positives / num_negatives
+    '''
+    i = 0 
+    best_pred_indeces = []
+    labels = []
+    positive_cnt = 0
+    negative_cnt = 0
+    
+    for prediction in predictions:
+        if np.max(prediction) >= confidence:
+            best_pred_indeces.append(i)
+    
+    for index in best_pred_indeces:
+        label = np.argmax(predictions[index])
+        
+        current_ratio = positive_cnt/negative_cnt
+        
+        if label == 0 and current_ratio:
+            positive_cnt = 0
+        
+        i += 1
+        
+    return best_pred_indeces 
+
+def check_ratio(negative, positive):
+    true_ratio = y_train
+```
+
+```{python}
+# Plotting Custom Functions
+
+def plot_perc_empty_region(predictions):
+    
+    i = 0
+    pcolors = ['rx', 'b^', 'go']
+    lcolors =  ['r-', 'b-', 'g-']
+    
+    for pred_confs in predictions:
+        empty_at_level = []
+        conf_levels = np.arange(0,11)/10
+
+        for conf_level in conf_levels:
+            
+            empty = 0
+            
+            for pred in pred_confs:
+                if pred[0] < conf_level and pred[1] < conf_level:
+                    empty +=1
+
+            prop_empty = empty/len(pred_confs)
+            empty_at_level.append(prop_empty)
+    
+        plt.plot(conf_levels, empty_at_level, pcolors[i])
+        plt.plot(conf_levels, empty_at_level, lcolors[i], linewidth=0.5, label='Iteration {}'.format(i))
+        i += 1
+    
+    plt.xlabel("Significance Level")
+    plt.ylabel("Proportion of Empty Region")
+    plt.legend()
+    plt.show()
+    
+def plot_err_multi_region(true_labels, predictions):
+    
+    pcolors = ['rx', 'b^', 'go', 'bx', 'g^']
+    lcolors =  ['r-', 'b-', 'g-', 'b-', 'g-']
+    
+    conf_levels = np.arange(0,11)/10
+
+    # For each confidence level, compute the number of correct labels
+    for i in range(0, len(predictions)):
+
+        pred_labels = []
+        props_wrong = []
+        
+        for conf_level in conf_levels:
+            num_correct_label = 0
+
+            # Check if class confidences with threshold
+            for pred in predictions[i]:
+                pred_labels.append([pred[0]>conf_level, pred[1]>conf_level])
+
+            # Check if the true class is true under this confidence level
+            for j in range(0, len(true_labels[i])):
+                true_label_index = int(true_labels[i].iloc[j])
+                if pred_labels[j][true_label_index] == True:
+                    num_correct_label += 1
+
+            prop_wrong = 1-((len(pred_labels)-num_correct_label)/len(pred_labels))
+            props_wrong.append(prop_wrong)
+
+        plt.plot(conf_levels, props_wrong, pcolors[i])
+        plt.plot(conf_levels, props_wrong, lcolors[i], linewidth=0.5)
+        
+    plt.xlabel("Significance Level")
+    plt.ylabel("Error on Multi-Label Region")
+    plt.legend()
+    plt.show()
+```
+
+```{python}
+# TRANSFER LEARNING CODE
+stop = False
+stalling = 0
+
+# Data
+X_lbld = data_lbld.iloc[:,:-1]
+y_lbld = data_lbld.iloc[:,-1]
+
+X_unlbld = data_unlbld.iloc[:,:-1]
+
+# Load initial classifier
+model_path = base_path+'models/corrected_classifiers_y_sk/classifier_y_sk_xgboost.sav'
+model = joblib.load(model_path)
+
+# Compute true ratio of labels
+freq = y_lbld.value_counts(True)
+ratio = freq[1]/freq[0]
+
+# Initialize variables
+predictions = []
+all_y_tests = []
+all_pred_confs = []
+best_icp = None
+
+while not stop:
+
+    print(
+        'Labelled set size: {} \n'.format(X_lbld.shape[0]),
+        'Unlabelled set size: {} \n'.format(X_unlbld.shape[0])
+    )
+    
+    # Evaluate current model
+#     best_icp, _, y_test, pred_confs = ccp_evaluate(model, X_lbld, y_lbld)
+#     all_y_tests.append(y_test)
+#     all_pred_confs.append(pred_confs)
+    
+    # Predict new labels 
+    if stalling < 1:
+        ccp_predictions = ccp_predict(model, X_lbld, y_lbld, X_unlbld)
+        best_pred_indeces = get_best_pred_indeces(ccp_predictions, 0.8, ratio)
+        
+        predictions.append(ccp_predictions)
+        print('Number of good predictions: {} \n'.format(len(best_pred_indeces)))
+    
+    # Add best predictions to labeled set
+    if len(best_pred_indeces) != 0:
+        X_lbld = X_lbld.append(X_unlbld.iloc[best_pred_indeces,:])
+        y_lbld = y_lbld.append(pd.Series([np.argmax(confs) for confs in ccp_predictions[best_pred_indeces]]))
+
+        X_unlbld = X_unlbld.drop(X_unlbld.index[best_pred_indeces], axis=0)
+    
+        print('Remaining unlabeled: {} \n'.format(X_unlbld.shape[0]))
+
+    if X_unlbld.shape[0] == 0 or stalling==1:
+        stop=True
+    
+    elif len(best_pred_indeces) == 0:
+        stalling += 1
+        
+    # stop=True
+```
+
+```{python}
+pred_test = pd.DataFrame(ccp_predictions, columns=['c0', 'c1'])
+```
+
+```{python}
+pred_test
+```
+
+```{python}
+plot_err_multi_region(all_y_tests, all_pred_confs)
+```
+
+```{python}
+plot_perc_empty_region(predictions)
+```
+
+```{python}
+plot_err_single_region()
+```
+
+```{python}
+pred_indices = get_best_pred_indeces(ccp, 0.95)
+```
+
+```{python}
+ccp[pred_indices]
+```
+
+```{python}
+(0.57629022+0.62384097+0.42762601+0.47196034+0.4514121)/5
+```
+
+```{python}
+max_confs = [np.max(confs) for confs in ccp_predictions]
+```
+
+```{python}
+plt.hist(max_confs, bins=20)
+```
+
+```{python}
+data_lbld
+```
+
+```{python}
+
+```
+
+```{python}
+
+```
+
+```{python}
+
+```

@@ -1,0 +1,109 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Add BDI and CSI
+
+```{python}
+import pandas as pd
+import numpy as np
+```
+
+```{python}
+data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_2018.csv" ,sep=";")
+```
+
+```{python}
+data.head()
+```
+
+```{python}
+data.shape
+```
+
+```{python}
+raw_data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/raw/client_scores_2018.csv" ,sep=";")
+```
+
+```{python}
+raw_data.head()
+```
+
+```{python}
+bdi_scores = raw_data[raw_data.survey_name =="BDI-II-NL"].score_name.unique()
+csi_scores = raw_data[raw_data.survey_name =="CSI"].score_name.unique()
+```
+
+```{python}
+data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_2018.csv" ,sep=";")
+
+for score in bdi_scores:
+    
+    data.insert(65, score, np.NaN)
+    
+    for client, row in raw_data[raw_data.score_name == score].iterrows():
+        data.loc[data.uuid == row.client_id, score] = row.score_value
+```
+
+```{python}
+# data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_2018.csv" ,sep=";")
+
+for score in csi_scores:
+    
+    data.insert(65, score, np.NaN)
+    
+    for client, row in raw_data[raw_data.score_name == score].iterrows():
+        data.loc[data.uuid == row.client_id, score] = row.score_value
+```
+
+```{python}
+data.Bdi2NlLevel.unique()
+```
+
+```{python}
+map_1 = {'Minimale symptomen':1, 'Lichte symptomen':2, 'Matige symptomen':3, 'Ernstige symptomen':4}
+
+
+data['Bdi2NlLevel'] = data['Bdi2NlLevel'].map(map_1)
+```
+
+```{python}
+data.TotalScore.unique()
+```
+
+```{python}
+map_1 = {'Subklinisch':1, 'Milde':2, 'Gemiddeld':2, 'Ernstig':3, 'Zeer Ernstig':4}
+
+
+data['TotalScore'] = data['TotalScore'].map(map_1)
+```
+
+```{python}
+data.head(10)
+```
+
+```{python}
+data.iloc[:,1:] = data.iloc[:,1:].astype(np.float64)
+```
+
+```{python}
+data.dtypes
+```
+
+```{python}
+data.to_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_2018 (with bdi-csi).csv" ,sep=";", index=False)
+```
+
+```{python}
+
+```

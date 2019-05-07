@@ -1,0 +1,246 @@
+---
+
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Setup Notebook
+
+```{python}
+# Turn off autosave for cleaner version control with jupytext and enable autoreloading of modules before running code
+# %autosave 0
+# %load_ext autoreload
+# %matplotlib notebook
+# %autoreload 2
+```
+
+# Building Classifier Y
+
+
+## Import Libraries
+
+```{python}
+# Python libraries
+import sys
+import pandas as pd
+import math
+import matplotlib.pyplot as pl
+
+# Custom functions
+from src.func.model_func import load_model
+from src.func.data_func import import_data
+
+# H2O functions
+import h2o
+from h2o.estimators.random_forest import H2ORandomForestEstimator
+from h2o.grid.grid_search import H2OGridSearch
+import matplotlib.pyplot as plt
+```
+
+## Build Classifier Y with SK weights
+
+```{python}
+# Initializing h2o
+h2o.init()
+```
+
+```{python}
+data_sk = h2o.import_file("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_y/weighted/data_classifier_y_labld_weights_sklearn.csv")
+data_sk
+```
+
+```{python}
+# Set predictor and response column names
+predictors = data_sk.columns[1:-2]
+
+# Parse categorical data
+categorical = ['HulpeloosheidLevel', 'MagnificatieLevel', 'RuminatieLevel', 'TotaalLevel', 'educationLevel', 'finished_treatment']
+
+for category in categorical:
+    data_sk[category] = data_sk[category].asfactor()
+    
+response = "finished_treatment"
+```
+
+```{python}
+# train, calib, test, valid = data.split_frame(ratios=[0.70,0.05, 0.15], seed=1)
+train_sk, test_sk = data_sk.split_frame(ratios=[0.8], seed=55)
+train_sk, valid_sk = train_sk.split_frame([0.8], seed=55)
+```
+
+```{python}
+print("Train Frame of shape: {}".format(train.shape))
+# print("Calibration Frame of shape: {}".format(calib.shape))
+# print("Test Frame of shape: {}".format(test.shape))
+print("Validation Frame of shape: {}".format(valid.shape))
+```
+
+```{python}
+criteria = {
+    "strategy": "RandomDiscrete", 
+    "stopping_tolerance": 0.00001,
+    "stopping_metric":"auc"
+}
+
+hyper_parameters = {
+    'ntrees': [50, 100,200, 250],
+    'max_depth': [5, 10, 20, 30, 50, 100],
+    'fold_assignment':['Stratified', 'Random']
+}
+```
+
+```{python}
+estimator = H2ORandomForestEstimator(weights_column="weights", nfolds=5, stopping_rounds=3, seed=1234)
+```
+
+```{python}
+gs = H2OGridSearch(estimator, hyper_params=hyper_parameters, search_criteria=criteria)
+```
+
+```{python}
+gs.train(x=predictors, y=response, training_frame=train_sk, validation_frame=valid_sk)
+```
+
+```{python}
+sorted_grid = gs.get_grid(sort_by='auc',decreasing=True)
+
+best_max_depth  = sorted_grid.sorted_metric_table()['max_depth'][0]
+best_ntrees     = sorted_grid.sorted_metric_table()['ntrees'][0]
+best_auc        = sorted_grid.sorted_metric_table()['auc'][0]
+best_fold_assignment = sorted_grid.sorted_metric_table()['fold_assignment'][0]
+
+print('Best max_depth.....', best_max_depth)
+print('Best ntrees........', best_ntrees)
+print('Best auc...........', best_auc)
+print('Best fold assignment...........', best_fold_assignment)
+```
+
+```{python}
+best_drf = sorted_grid[0]
+```
+
+```{python}
+model_path = h2o.save_model(model=best_drf, path="/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/models/corrected_classifiers_y", force=True)
+```
+
+```{python}
+model_path
+```
+
+## Get Classifier performance
+
+```{python}
+from sklearn.metrics import accuracy_score, roc_auc_score
+```
+
+```{python}
+predictions = best_drf.predict(test_sk).as_data_frame()
+```
+
+```{python}
+predict_labels = predictions['predict']
+proba_predict = predictions[['p0','p1']]
+```
+
+```{python}
+true_labels = test.as_data_frame()['finished_treatment']
+```
+
+```{python}
+roc_auc_score(true_labels, proba_predict['p1'])
+```
+
+```{python}
+accuracy_score(true_labels, predict_labels)
+```
+
+## Build Classifier Y with H2O weights
+
+```{python}
+data_h2o = h2o.import_file("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/data_classifier_y_labld_weights_h2o.csv")
+data_h2o
+```
+
+```{python}
+# Set predictor and response column names
+predictors = data_h2o.columns[1:-2]
+
+# Parse categorical data
+categorical = ['HulpeloosheidLevel', 'MagnificatieLevel', 'RuminatieLevel', 'TotaalLevel', 'educationLevel', 'finished_treatment']
+
+for category in categorical:
+    data_h2o[category] = data_h2o[category].asfactor()
+    
+response = "finished_treatment"
+```
+
+```{python}
+# train, calib, test, valid = data.split_frame(ratios=[0.70,0.05, 0.15], seed=1)
+train_h2o, test_h2o = data_h2o.split_frame(ratios=[0.8], seed=55)
+train_h2o, valid_h2o = train_h2o.split_frame([0.8], seed=55)
+```
+
+```{python}
+criteria = {
+    "strategy": "RandomDiscrete", 
+    "stopping_tolerance": 0.00001,
+    "stopping_metric":"auc"
+}
+
+hyper_parameters = {
+    'ntrees': [50, 100,200, 250],
+    'max_depth': [5, 10, 20, 30, 50, 100],
+    'fold_assignment':['Stratified', 'Random']
+}
+```
+
+```{python}
+estimator = H2ORandomForestEstimator(weights_column="weights", nfolds=5, stopping_rounds=3, seed=1234)
+```
+
+```{python}
+gs = H2OGridSearch(estimator, hyper_params=hyper_parameters, search_criteria=criteria)
+```
+
+```{python}
+gs.train(x=predictors, y=response, training_frame=train_h2o, validation_frame=valid_h2o)
+```
+
+```{python}
+sorted_grid = gs.get_grid(sort_by='auc',decreasing=True)
+
+best_max_depth  = sorted_grid.sorted_metric_table()['max_depth'][0]
+best_ntrees     = sorted_grid.sorted_metric_table()['ntrees'][0]
+best_auc        = sorted_grid.sorted_metric_table()['auc'][0]
+best_fold_assignment = sorted_grid.sorted_metric_table()['fold_assignment'][0]
+
+print('Best max_depth.....', best_max_depth)
+print('Best ntrees........', best_ntrees)
+print('Best auc...........', best_auc)
+print('Best fold assignment...........', best_fold_assignment)
+```
+
+```{python}
+best_drf = sorted_grid[0]
+```
+
+```{python}
+model_path = h2o.save_model(model=best_drf, path="/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/models/corrected_classifier_y_h2o", force=True)
+```
+
+```{python}
+
+```

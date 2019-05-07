@@ -1,0 +1,51 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Classifier S with H2O
+
+## Imports
+
+```{python}
+import h2o
+import pandas as pd
+```
+
+```{python}
+h2o.init()
+```
+
+## Import Data
+
+```{python}
+data = h2o.import_file('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/data_classifier_s.csv')
+```
+
+```{python}
+# Parse categorical data
+categorical = ['HulpeloosheidLevel', 'MagnificatieLevel', 'RuminatieLevel', 'TotaalLevel', 'educationLevel', 'got_go']
+
+for category in categorical:
+    data[category] = data[category].asfactor()
+```
+
+```{python}
+# Set predictors and response columns
+features = data.columns
+X = features[:-1]
+y = features[-1]
+```
+
+```{python}
+
+```

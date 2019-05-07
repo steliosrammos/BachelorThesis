@@ -1,0 +1,483 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Conformal Co-Training Bias Correction Framework 
+
+In this notebook I implemented the cross-conformal predictor which predict labels with a given level of confidence. 
+
+## Results
+
+### EXPERIMENT 1:
+
+Experiment conditions: no SMOTE, no bias correction weights, 0.6 confidence level
+
+Initial ROC AUC: 0.6046071823340163 -->
+Final ROC AUC: 0.6185914351334235
+
+Number of iterations: 5 <br>
+Improving iterations: 4
+
+Number of newly labeled data: 37 <br>
+Positives: 32 <br>
+Negatives: 5 <br>
+
+### EXPERIMENT 2:
+
+Experiment conditions: no SMOTE, with bias correction weights, 0.6 confidence level
+
+Initial ROC AUC: 0.6035000855102206<br>
+Final ROC AUC: 0.613462112484796
+
+Number of iterations: 2<br> 
+Improving iterations: 1<br>
+
+Number of newly labeled data: 18<br>
+Positives: 15<br>
+Negatives: 3<br>
+
+### EXPERIMENT 3:
+
+Experiment conditions: with SMOTE, without bias correction weights, 0.6 confidence level
+
+Initial ROC AUC: 0.6046071823340163<br>
+Final ROC AUC: 0.616971423643721
+
+Number of iterations: 2<br> 
+Improving iterations: 1<br>
+
+Number of newly labeled data: 38<br>
+Positives: 31<br>
+Negatives: 7<br>
+
+### EXPERIMENT 4:
+
+Experiment conditions: with SMOTE, with bias correction weights, 0.6 confidence level
+
+Initial ROC AUC: 0.603500085510220<br>
+Final ROC AUC: 0.6177186373494289
+
+Number of iterations: 4<br> 
+Improving iterations: 3<br>
+
+Number of newly labeled data: 74<br>
+Positives: 61<br>
+Negatives: 13<br>
+
+### EXPERIMENT 5:
+
+Experiment conditions: with SMOTE, without bias correction weights, 0.7 confidence level
+
+Initial ROC AUC: 0.6035000855102206<br>
+Final ROC AUC: 0.6176919214443346
+
+Number of iterations: 2<br> 
+Improving iterations: 1<br>
+
+Number of newly labeled data: 18<br>
+Positives: 15<br>
+Negatives: 3<br>
+
+## Imports
+
+```{python}
+# General packages
+import h2o
+import pandas as pd
+import numpy as np
+
+# Scikit-learn
+from sklearn.model_selection import StratifiedKFold, StratifiedShuffleSplit
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import roc_auc_score, accuracy_score, average_precision_score, precision_score
+from sklearn.externals import joblib
+
+# Conformal framework
+from nonconformist.cp import TcpClassifier, IcpClassifier
+from nonconformist.nc import NcFactory
+from nonconformist.base import ClassifierAdapter
+from nonconformist.nc import ClassifierNc, ClassificationErrFunc, InverseProbabilityErrFunc, MarginErrFunc
+
+# Custom functions
+from src.func.model_func import get_best_xgb_estimator
+
+# XGBoost
+from xgboost import XGBClassifier
+import xgboost as xgb
+
+from sklearn.calibration import CalibratedClassifierCV
+
+import matplotlib.pyplot as plt
+
+from imblearn.over_sampling import SMOTE
+
+import warnings
+warnings.filterwarnings('ignore')
+```
+
+```{python}
+# CROSS-VALIDATED CONFORMAL PREDICTIONS
+def ccp(data_lbld, data_unlbld, new_lbld):
+    
+    # Create SMOTE instance for class rebalancing
+    smote = SMOTE(random_state=55)
+    
+    # Create instance of classifier
+    clf = XGBClassifier(n_jobs=6, learing_rate=0.3, max_depth=20, n_estimators=50, scale_pos_weight=0.2)
+    
+    data_lbld = data_lbld.dropna()
+    new_lbld = new_lbld.dropna()
+    
+    X = data_lbld.iloc[:,:-2]
+    y = data_lbld.iloc[:,-1]
+    
+    X_new = new_lbld.iloc[:,:-2]
+    y_new = new_lbld.iloc[:,-1]
+
+    X = X.append(X_new, sort=False)
+    y = y.append(y_new)
+    
+    X_unlbld = data_unlbld.iloc[:, :-2]
+    
+    sss = StratifiedKFold(n_splits=5, random_state=55)
+    sss.get_n_splits(X, y)
+    
+    pred_confs = []
+
+    for train_index, calib_index in sss.split(X, y):
+        
+        X_train, X_calib = X.iloc[train_index], X.iloc[calib_index]
+        y_train, y_calib = y.iloc[train_index], y.iloc[calib_index]
+        
+        X_train, y_train = smote.fit_resample(X_train, y_train)
+        
+        # with/out correction
+#         clf.fit(X_train.iloc[:, :-1], y_train, sample_weight=X_train.iloc[:, -1])
+#         clf.fit(X_train.iloc[:, :-1], y_train)
+
+        # with/out smote
+        clf.fit(X_train[:, :-1], y_train, sample_weight=X_train[:, -1])
+#         clf.fit(X_train[:, :-1], y_train)
+        
+#         nc = NcFactory.create_nc(clf, InverseProbabilityErrFunc())
+        nc = NcFactory.create_nc(clf, MarginErrFunc())
+        icp = IcpClassifier(nc)
+        
+#         icp.fit(X_train.iloc[:, :-1].values, y_train)
+        icp.fit(X_train[:, :-1], y_train)
+    
+        icp.calibrate(X_calib.iloc[:, :-1].values, y_calib)
+        
+        # Predict confidences for validation sample and unlabeled sample
+        pred_confs.append(icp.predict(X_unlbld.iloc[:, :-1].values, significance=None))
+
+    ccp_predictions = np.array(pred_confs).mean(axis=0)
+    ccp_predictions = pd.DataFrame(ccp_predictions, columns=['0', '1'])
+    ccp_predictions.index = X_unlbld.index 
+    
+    return ccp_predictions
+```
+
+```{python}
+def evaluate_model(data_lbld, new_lbld):
+    '''
+        Evaluate the model with the newly labeled data. 
+        Metric: ROC AUC
+    '''
+    # Compute class ratio
+    ratio = calculate_ratio(data_lbld, new_lbld)
+    
+    # Create instance of classifier
+    model = XGBClassifier(n_jobs=6, learing_rate=0.3, max_depth=20, n_estimators=50, scale_pos_weight=ratio)
+    
+    X = data_lbld.iloc[:,:-1]
+    y = data_lbld.iloc[:,-1]
+
+    # Initialize roc array
+    roc_aucs = []
+    
+    sss = StratifiedKFold(n_splits=10, random_state=55)
+    skf_5 = StratifiedKFold(5, random_state=55)
+    
+    # Split data into training and validating set
+    for train_index, valid_index in sss.split(X,y):
+
+        X_train, X_valid = X.iloc[train_index], X.iloc[valid_index]
+        y_train, y_valid = y.iloc[train_index], y.iloc[valid_index]
+
+        X_new = new_lbld.iloc[:,:-1]
+        y_new = new_lbld.iloc[:,-1]
+
+        X_train = X_train.append(X_new, sort=False)
+        y_train = y_train.append(y_new)
+        
+        # Fit model
+        model.fit(X_train.iloc[:, :-1], y_train, sample_weight=X_train.iloc[:, -1])
+
+        calibrated_model = CalibratedClassifierCV(model, cv=skf_5, method='isotonic')
+        calibrated_model.fit(X_train.iloc[:, :-1], y_train, sample_weight=X_train.iloc[:, -1])
+#         calibrated_model.fit(X_train.iloc[:, :-1], y_train)
+    
+        # Predict labels
+        predicted_proba = calibrated_model.predict_proba(X_valid.iloc[:, :-1])[:, 1]
+        
+        # Compute ROC AUC
+        roc_auc = roc_auc_score(y_valid, predicted_proba)
+        roc_aucs.append(roc_auc)
+        
+    avrg_roc = np.array(roc_aucs).mean()
+    
+    return avrg_roc
+```
+
+```{python}
+def get_best_pred_indeces(predictions, confidence, true_ratio):
+    '''
+        Returns the predictions that have a confidence level above a given threshold. 
+        The labels returned will have the same positive/negative ratio as the ratio specified by "true_ratio".
+        true_ratio: num_negatives / num_positives
+    '''
+    positive_indeces = []
+    negative_indeces = []
+    
+    predictions['labels'] = predictions.idxmax(axis=1).astype(int)
+    
+    positives = predictions[predictions["labels"]==1].sort_values("1")
+    negatives = predictions[predictions["labels"]==0].sort_values("0")
+    
+    positives = positives[positives["1"]>confidence]
+    negatives = negatives[negatives["0"]>confidence]
+    
+    current_ratio = (negatives.shape[0]+1)/(positives.shape[0]+1)
+    
+    if current_ratio < true_ratio:
+        while current_ratio < true_ratio:
+            positives = positives[1:]
+            current_ratio = (negatives.shape[0]+1)/(positives.shape[0]+1)
+    
+    elif current_ratio > true_ratio:
+        while current_ratio > true_ratio:
+            negatives = negatives[1:]
+            current_ratio = (negatives.shape[0]+1)/(positives.shape[0]+1)
+    
+    positives_indeces = list(positives.index.values)
+    negatives_indeces = list(negatives.index.values)
+    
+    print("Good positive predictions: {} \n".format(len(positives_indeces)))
+    print("Good negative predictions: {} \n".format(len(negatives_indeces)))
+    
+    best_pred_indeces = positives_indeces + negatives_indeces
+    labels = predictions.loc[best_pred_indeces, "labels"]
+    
+    return labels
+```
+
+```{python}
+def oversample_minority(dataframe, label_column, minority_class, coefficient, at_indeces=None):
+    
+    oversampled_indeces = []
+    num_oversampled = 0
+    
+    if at_indeces is not None:  
+        for index in at_indeces:
+            if new_lbld.loc[index, label_column] == minority_class:
+                oversampled_indeces += coefficient * [index]
+                num_oversampled += 1
+            else:
+                oversampled_indeces += [index]
+    else:  
+        for index in new_lbld.index:
+            if new_lbld.loc[index, label_column] == minority_class:
+                oversampled_indeces += coefficient * [index]
+                num_oversampled += 1
+            else:
+                oversampled_indeces += [index]
+        
+    print('Oversampled {} examples.'.format(num_oversampled))
+#     print('Oversampled indeces: {}'.format(oversampled_indeces))
+    
+    return oversampled_indeces
+```
+
+```{python}
+def calculate_ratio(data_lbld, new_lbld):
+    
+    counts_data = data_lbld.finished_treatment.value_counts()
+    counts_new = new_lbld.finished_treatment.value_counts()
+    
+    negatives = counts_data[0]
+    positives = counts_data[1]    
+    
+    if len(counts_new) == 2:
+        negatives = counts_data[0] + counts_new[0]
+        positives = counts_data[1] + counts_new[1]
+    
+    ratio = negatives/positives
+    
+    return ratio
+```
+
+```{python}
+base_path = "/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/"
+
+# Load data
+data = pd.read_csv(base_path+"data/processed/classifier_y/weighted/sk_xgb_weights/data_classifier_y_weighted_sk_xgboost.csv", sep=";")
+data = data.drop("uuid", axis=1)
+
+# Split data into labeled and unlabeled sets
+data_lbld = data[~data.finished_treatment.isna()]
+data_unlbld = data[data.finished_treatment.isna()]
+
+# Compute positive to negative ratio
+label_cnts = data_lbld.finished_treatment.value_counts()
+ratio = label_cnts[0]/label_cnts[1]
+
+# Load current model
+# model_path = base_path+'models/corrected_classifiers_y_sk/classifier_y_sk_xgboost.sav'
+# model = joblib.load(model_path)
+# model = XGBClassifier(n_jobs=6, learing_rate=0.3, max_depth=20, n_estimators=50, scale_pos_weight=ratio)
+
+# Initialize array of newly_labeled data
+new_lbld = data_unlbld.copy()
+all_newly_labeled_indeces = []
+
+# Evaluate current model
+init_avrg_roc_auc = evaluate_model(data_lbld, new_lbld.loc[all_newly_labeled_indeces])
+print("Initial ROC AUC: {} \n".format(init_avrg_roc_auc))
+print("Initial ratio: {} \n".format(ratio))
+
+# Initialize average ROC AUC:
+best_avrg_roc_auc = init_avrg_roc_auc
+pr_aucs = []
+
+# Initialize stopping variable
+stop = False
+
+print('Start conformal improvement. \n')
+
+while not stop:
+    
+    # Make conformal predictions
+    ccp_predictions = ccp(data_lbld, data_unlbld, new_lbld.loc[all_newly_labeled_indeces])
+
+    # Add new labels 
+    labels = get_best_pred_indeces(ccp_predictions, 0.7, ratio)
+    new_lbld.loc[labels.index.values, "finished_treatment"] = labels.values
+    
+    # Save new label's indeces
+    newly_labeled_indeces = list(labels.index.values)
+    oversampled_newly_lbld_indeces = oversample_minority(new_lbld, 'finished_treatment', 0, 3, newly_labeled_indeces)
+    all_newly_labeled_indeces += oversampled_newly_lbld_indeces
+
+    print('Number of good predictions: {} \n'.format(labels.shape[0]))
+    
+    # Evaluate current model
+    avrg_roc_auc = evaluate_model(data_lbld, new_lbld.loc[all_newly_labeled_indeces])
+    
+    if avrg_roc_auc > best_avrg_roc_auc:
+        
+        # Update average PR AUC
+        best_avrg_roc_auc = avrg_roc_auc
+        data_unlbld = data_unlbld.drop(newly_labeled_indeces)
+        
+        # Update ratio
+        new_ratio = calculate_ratio(data_lbld, new_lbld)
+        ratio = new_ratio
+        
+        # Debug
+        print("Improved! \n")
+        print("Updated ROC AUC: {} \n".format(avrg_roc_auc))
+        print("Updated ratio: {} \n".format(ratio))
+        
+    else:
+        
+        print("Did not improve...")
+        print("ROC AUC: {} \n".format(avrg_roc_auc))
+        print("Final ROC AUC {}".format(best_avrg_roc_auc))
+        stop = True
+```
+
+```{python}
+all_newly_labeled_indeces
+```
+
+```{python}
+oversampled_newly_lbld_indeces
+```
+
+```{python}
+data.loc[all_newly_labeled_indeces]
+```
+
+```{python}
+counts = new_lbld.finished_treatment.value_counts()
+counts[0]/counts[1]
+```
+
+```{python}
+ccp_predictions.describe()
+```
+
+```{python}
+ccp_predictions.describe()
+```
+
+```{python}
+ccp_predictions.describe()
+```
+
+```{python}
+ratio
+```
+
+```{python}
+ccp_predictions["0"].hist()
+```
+
+```{python}
+newly_labeled_indeces
+```
+
+```{python}
+a = range(2)
+[val for val in a for _ in (0, 1)]
+```
+
+```{python}
+[index for index in new_lbld.loc[newly_labeled_indeces].index]
+```
+
+```{python}
+oversampled_newly_lbld_indeces
+```
+
+```{python}
+new_lbld.loc[oversampled_newly_lbld_indeces]
+```
+
+```{python}
+oversampled_indeces = oversample_minority(new_lbld, 'finished_treatment', 0, 2, newly_labeled_indeces)
+```
+
+```{python}
+new_lbld.loc[[1656, 94, 2309, 238, 1397, 547, 1518, 2413, 1394, 2401, 73, 287, 2384, 1697, 1323, 2161, 859, 802]]
+```
+
+```{python}
+new_lbld.loc[94, 'finished_treatment']
+```
+
+```{python}
+
+```

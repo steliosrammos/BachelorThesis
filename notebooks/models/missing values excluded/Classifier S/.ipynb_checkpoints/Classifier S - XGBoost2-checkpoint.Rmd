@@ -1,0 +1,232 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Classifier S - XGBoost
+
+## Imports
+
+```{python}
+# XGBoost
+from xgboost import XGBClassifier
+import xgboost as xgb
+
+# SKLearn
+from sklearn.model_selection import StratifiedShuffleSplit
+from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, average_precision_score, recall_score
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+
+# Data processing
+import pandas as pd
+import numpy as np
+
+# Visualization
+import matplotlib.pyplot as plt
+
+# Custom functions
+from src.func.model_func import get_metrics
+from src.func.model_func import save_model
+
+
+```
+
+## Import Data
+
+```{python}
+# data = h2o.import_file('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_s/data_classifier_s.csv')
+# train_data = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_s/train_classifier_s.csv', sep=";")
+# test_data = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_s/test_classifier_s.csv', sep=";")
+
+base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
+data = pd.read_csv(base_path+"data/processed/classifier_s/data_classifier_s.csv", sep=";")
+data = data.fillna(data.mean())
+```
+
+```{python}
+X = train_data.iloc[:, :-1]
+y = train_data.iloc[:, -1]
+```
+
+```{python}
+# Split train, test, valid
+# from sklearn.model_selection import train_test_split
+# X_train, X_valid, y_train, y_valid = train_test_split(X, y, test_size=0.2, random_state=55)
+```
+
+## XGBoost Estimator (Training)
+
+```{python}
+def get_best_xgb_estimator(X_train, X_test, y_train, y_test, grid_search=False, verbose=False):
+    '''
+    :param X_train: dataframe or array with training instances
+    :param X_test: dataframe or array with test instances
+    :param y_train: dataframe or array with training labels
+    :param y_test: dataframe or array with testing labels
+    :param verbose: set to 'True' for a detailed report of the grid search
+    :return: the best estimator and its corresponding score
+    '''
+    
+#     dtrain = xgb.DMatrix(X_train.values, label=y_train.values)
+#     dvalid = xgb.DMatrix(X_valid.values, label=y_valid.values)
+
+    skf_5 = StratifiedKFold(5, shuffle=True, random_state=1)
+
+    if grid_search == True: 
+        # Parameters for the grid search
+        parameters = {
+            'max_depth': [30],
+            'n_estimators': [150],
+            'learning_rate':[0.051],
+            'reg_lambda':[0.9],
+            'objective':['binary:logistic'],
+            'eval_metric':["auc"]
+        }
+
+        xgbest = GridSearchCV(XGBClassifier(n_jobs=6), param_grid=parameters, cv=skf_5, scoring="roc_auc", verbose=0)
+        
+    else:
+        xgbest = XGBClassifier(n_jobs=6, reg_lambda=0.8, scale_pos_weight=0.9, learing_rate=0.05, max_depth=30, n_estimators=150)
+    
+    # Calibrate the classifier here
+    calib_xgbest = CalibratedClassifierCV(xgbest, cv=10, method='isotonic')
+    calib_xgbest.fit(X_train, y_train)
+
+    predicted_proba = calib_xgbest.predict_proba(X_test)[:, 1]
+    predicted_labels = calib_xgbest.predict(X_test)
+    roc_auc = roc_auc_score(y_test, predicted_proba)
+    pr_auc = average_precision_score(y_test, predicted_proba)
+    
+    if verbose:
+    
+        print(
+#             'Best parameters: {} \n'.format(calib_xgbest.best_params_),
+            'ROC {} \n'.format(roc_auc),
+            'Accuracy {} \n '.format(accuracy_score(y_test, predicted_labels)),
+            'Precision {}\n '.format(precision_score(y_test, predicted_labels)),
+            'Average precision-recall score: {0:0.2f} \n\n'.format(pr_auc)
+        )
+
+    return calib_xgbest, roc_auc, pr_auc
+```
+
+```{python}
+sss = StratifiedShuffleSplit(n_splits=10, test_size=0.2, random_state=55)
+sss.get_n_splits(X, y)
+
+roc_aucs = []
+pr_aucs = []
+best_xgbs = []
+
+for train_index, test_index in sss.split(X, y):
+    
+    X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+    y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+    
+    best_xgb, roc_auc, pr_auc = get_best_xgb_estimator(X_train, X_test, y_train, y_test, verbose=False)
+    roc_aucs.append(roc_auc)
+    pr_aucs.append(pr_auc)
+    best_xgbs.append(best_xgb)
+```
+
+```{python}
+roc = np.array(roc_aucs)
+pr = np.array(pr_aucs)
+
+print(roc.mean())
+print(pr.mean())
+```
+
+```{python}
+print(np.max(roc_aucs))
+xgbest = best_xgbs[np.argmax(roc_aucs)]
+```
+
+## Evaluation
+
+```{python}
+X_test = test_data.iloc[:, :-1]
+y_test = test_data.iloc[:, -1]
+
+predicted_proba = xgbest.predict_proba(X_test)[:, 1]
+
+roc_auc = roc_auc_score(y_test, predicted_proba)
+pr_auc = average_precision_score(y_test, predicted_proba)
+
+print("ROC AUC: {} \n".format(roc_auc))
+print("PR AUC: {} \n".format(pr_auc))
+```
+
+```{python}
+
+```
+
+```{python}
+def plot_calibration_curve(name, fig_index):
+    """Plot calibration curve for est w/o and with calibration. """
+    
+    fig = plt.figure(fig_index, figsize=(10, 10))
+    ax1 = plt.subplot2grid((3, 1), (0, 0), rowspan=2)
+#     ax2 = plt.subplot2grid((3, 1), (2, 0))
+    
+    ax1.plot([0, 1], [0, 1], "k:", label="Perfectly calibrated")
+    
+    y_pred = xgbest.predict(X_test)
+    
+    prob_pos = xgbest.predict_proba(X_test)[:, 1]
+
+    print("%s:" % name)
+    print("\tPrecision: %1.3f" % precision_score(y_test, y_pred))
+    print("\tRecall: %1.3f" % recall_score(y_test, y_pred))
+
+    fraction_of_positives, mean_predicted_value = calibration_curve(y_test, prob_pos, n_bins=10)
+
+    ax1.plot(mean_predicted_value, fraction_of_positives, "s-")
+#              label="%s (%1.3f)" % (name, clf_score))
+
+#     ax2.hist(prob_pos, range=(0, 1), bins=10, label=name,
+#              histtype="step", lw=2)
+
+    ax1.set_ylabel("Fraction of positives")
+    ax1.set_ylim([-0.05, 1.05])
+    ax1.legend(loc="lower right")
+    ax1.set_title('Calibration plots  (reliability curve)')
+
+#     ax2.set_xlabel("Mean predicted value")
+#     ax2.set_ylabel("Count")
+#     ax2.legend(loc="upper center", ncol=2)
+
+    plt.tight_layout()
+
+# Plot calibration curve for Linear SVC
+plot_calibration_curve("XGBest", 1)
+
+plt.show()
+```
+
+```{python}
+prediction_positive = xgbest.predict_proba(X_test)[:, 1]
+plt.hist(prediction_positive)
+```
+
+## Save Model
+
+```{python}
+# Save model
+save_model(best_xgb, '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/models/classifier_s/calibrated/classifier_s_sk_xgboost')
+```
+
+```{python}
+
+```

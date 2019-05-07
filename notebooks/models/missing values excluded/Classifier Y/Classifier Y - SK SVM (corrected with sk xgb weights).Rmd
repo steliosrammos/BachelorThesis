@@ -1,0 +1,285 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Classifier Y - SK SVM (corrected with sk xgb weights)
+
+
+## Imports
+
+```{python}
+# XGBoost
+from sklearn.svm import SVC
+
+# SKLearn
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, KFold, ShuffleSplit, StratifiedShuffleSplit
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, average_precision_score, recall_score, brier_score_loss
+from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+
+# Data processing
+import pandas as pd
+import numpy as np
+
+# Visualization
+import matplotlib.pyplot as plt
+
+# Custom functions
+from src.func.model_func import get_metrics
+from src.func.model_func import save_model
+
+# Imbalanced learn
+from imblearn.over_sampling import SMOTE
+```
+
+## Results
+
+SMOTE(0.35)
+
+1. KFold: <br>
+    -> ROC AUC: 0.5978 <br>
+    -> PR AUC: 0.8501 <br>
+    -> Brier Loss: 0.1614 <br>
+2. Stratified KFold <br>
+    -> ROC AUC: 0.6114<br>
+    -> PR AUC: 0.8608 <br>
+    -> Brier Loss: -
+    
+No balancing:
+
+1. Stratified Shuffle Split <br>
+    -> ROC AUC: 0.6163 **unweighted gives 0.6222** <br>
+    -> PR AUC: 0.8634 **unweighted gives 0.8656**<br>
+    -> Brier Loss: -
+
+
+## Import data
+
+```{python}
+# data = h2o.import_file('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_s/data_classifier_s.csv')
+# train_data = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_y/weighted/sk_xgb_weights/classifier_y_lbld_weighted_sk_xgb_train.csv', sep=";")
+# test_data = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_y/weighted/sk_xgb_weights/classifier_y_lbld_weighted_sk_xgb_test.csv', sep=";")
+
+data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_y/weighted/sk_xgb_weights/data_classifier_y_weighted_sk_xgboost.csv", sep=";")
+data = data.drop('uuid', axis=1)
+```
+
+```{python}
+data_lbld = data.dropna()
+```
+
+```{python}
+X = data_lbld.iloc[:, :-1]
+y = data_lbld.iloc[:, -1].astype(int)
+```
+
+```{python}
+np.bincount(y)
+```
+
+# Short prior analysis
+
+```{python}
+print("Data: \n", data.finished_treatment.value_counts(normalize=True))
+```
+
+ROC: false alarm rate versus hit rate <br>
+Precision-recall: precision over sensitivity
+
+
+## Custom GridsearchCV function
+
+```{python}
+def get_best_svm_estimator(X_train, X_valid, y_train, y_valid, grid_search=False, verbose=False):
+    '''
+    :param X_train: dataframe or array with training instances
+    :param X_test: dataframe or array with test instances
+    :param y_train: dataframe or array with training labels
+    :param y_test: dataframe or array with testing labels
+    :param verbose: set to 'True' for a detailed report of the grid search
+    :return: the best estimator and its corresponding score
+    '''
+
+#     if grid_search == True: 
+#         # Parameters for the grid search
+#         skf_5 = StratifiedKFold(5, random_state=1)
+#         parameters = {
+#             'max_depth': [20],
+#             'n_estimators': [50],
+#             'learning_rate':[0.3],
+#             'scale_pos_weight':[0.1, 0.2, 0.3],
+#             'objective':['binary:logistic'],
+#             'eval_metric':["auc"]
+#         }
+
+#         xgbest = GridSearchCV(XGBClassifier(n_jobs=6), param_grid=parameters, cv=skf_5, scoring="roc_auc", verbose=0)
+        
+#     else:
+    
+    svm = SVC(gamma='scale', class_weight='balanced', probability=True, random_state=55)
+    
+    # Create calibrated classifier
+    calibrated_svm = CalibratedClassifierCV(svm, cv=5, method='isotonic')
+    
+    if type(X_train) == np.ndarray:
+        calibrated_svm.fit(X_train[:, :-1], y_train, sample_weight=X_train[:, -1])
+    else:
+#         calibrated_svm.fit(X_train.iloc[:, :-1], y_train, sample_weight=X_train.iloc[:, -1])
+        calibrated_svm.fit(X_train.iloc[:, :-1], y_train)
+
+    # Predict label with certain probability
+    predicted_proba = calibrated_svm.predict_proba(X_valid.iloc[:, :-1])[:, 1]
+    predicted_labels = calibrated_svm.predict(X_valid.iloc[:, :-1])
+    
+    # Compute metrics
+    roc_auc = roc_auc_score(y_valid, predicted_proba)
+    pr_auc = average_precision_score(y_valid, predicted_proba)
+    
+    if verbose:
+    
+        print(
+#             'Best parameters: {} \n'.format(calib_xgbest.best_params_),
+            'ROC {} \n'.format(roc_auc),
+            'Accuracy {} \n '.format(accuracy_score(y_valid, predicted_labels)),
+            'Precision {}\n '.format(precision_score(y_valid, predicted_labels)),
+            'Average precision-recall score: {0:0.2f} \n\n'.format(pr_auc)
+        )
+
+    return calibrated_svm, roc_auc, pr_auc
+```
+
+```{python}
+# Stratified Shuffle Split
+# sss = KFold(n_splits=10, random_state=55)
+sss = StratifiedShuffleSplit(n_splits=10, test_size=0.2, random_state=55)
+# sss = StratifiedKFold(n_splits=10, random_state=55)
+
+sss.get_n_splits(X, y)
+
+# Oversampling SMOTE instance
+smote = SMOTE(random_state=55)
+    
+best_svms = []
+roc_aucs = []
+pr_aucs = []
+splits = []
+predicted_prob_s = pd.Series(np.full(y.shape[0], np.nan))
+predicted_prob_s.index = y.index
+
+for train_index, valid_index in sss.split(X, y):
+    
+#     print(valid_index)
+
+    X_train, X_valid = X.iloc[train_index], X.iloc[valid_index]
+    y_train, y_valid = y.iloc[train_index], y.iloc[valid_index]
+    
+# Uncomment line below for SMOTE oversampling
+#     X_train, y_train = smote.fit_resample(X_train, y_train)
+
+    best_svm, roc_auc, pr_auc = get_best_svm_estimator(X_train, X_valid, y_train, y_valid, grid_search=False, verbose=False)
+    
+    predicted_prob_s[X_valid.index] = best_svm.predict_proba(X_valid.iloc[:, :-1])[:, 1]
+    
+    best_svms.append(best_svm)
+    roc_aucs.append(roc_auc)
+    pr_aucs.append(pr_auc)
+    splits.append([train_index, valid_index])
+```
+
+```{python}
+roc = np.array(roc_aucs)
+pr = np.array(pr_aucs)
+
+print(roc.mean())
+print(pr.mean())
+```
+
+```{python}
+roc_aucs
+```
+
+```{python}
+# best_index = 0
+best_index = np.argmax(roc_aucs)
+
+print(roc[best_index])
+svmbest = best_svms[best_index]
+best_splits = splits[best_index]
+```
+
+## Evaluation
+
+```{python}
+X_test = X.iloc[best_splits[1]]
+y_test = y.iloc[best_splits[1]]
+
+predicted_proba = svmbest.predict_proba(X_test.iloc[:,:-1])[:, 1]
+
+roc_auc = roc_auc_score(y_test, predicted_proba)
+pr_auc = average_precision_score(y_test, predicted_proba)
+
+print("ROC AUC: {} \n".format(roc_auc))
+print("PR AUC: {} \n".format(pr_auc))
+```
+
+## Calibration
+
+```{python}
+# def plot_calibration_curve(y_true, y_predicted):
+#     """Plot calibration curve for est w/o and with calibration. """
+    
+#     fig = plt.figure(1, figsize=(10, 10))
+#     ax1 = plt.subplot2grid((3, 1), (0, 0), rowspan=2)
+#     ax2 = plt.subplot2grid((3, 1), (2, 0))
+    
+#     ax1.plot([0, 1], [0, 1], "k:", label="Perfectly calibrated")
+    
+#     print("Brier Loss: ", brier_score_loss(y_true, y_predicted))
+#     fraction_of_positives, mean_predicted_value = calibration_curve(y_true, y_predicted, n_bins=10)
+
+#     ax1.plot(mean_predicted_value, fraction_of_positives, "s-")
+#     ax2.hist(predicted_prob_s, range=(0, 1), bins=10, histtype="step", lw=2)
+
+#     ax1.set_ylabel("Fraction of positives")
+#     ax1.set_ylim([-0.05, 1.05])
+#     ax1.legend(loc="lower right")
+#     ax1.set_title('Calibration plots  (reliability curve)')
+
+#     ax2.set_xlabel("Mean predicted value")
+#     ax2.set_ylabel("Count")
+#     ax2.legend(loc="upper center", ncol=2)
+
+#     plt.tight_layout()
+
+# # Plot calibration curve for Linear SVC
+# y_true = y[predicted_prob_s.index]
+# plot_calibration_curve(y_true, predicted_prob_s)
+
+# plt.show()
+```
+
+```{python}
+# # prediction_positive = xgbest.predict_proba(X_test.iloc[:,:-1])[:, 1]
+# prediction_positive = xgbest.predict_proba(X_test[:,:-1])[:, 1]
+# plt.hist(prediction_positive, bins=10)
+```
+
+```{python}
+# Save model
+save_model(xgbest, '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/models/corrected_classifiers_y_sk/classifier_y_sk_xgboost')
+```
+
+```{python}
+
+```

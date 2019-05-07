@@ -1,0 +1,299 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Feature Selection Process
+
+## Imports
+
+```{python}
+import pandas as pd
+import numpy as np
+import re
+```
+
+## Import Data
+
+```{python}
+data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/raw/client_scores_full.csv", sep=";", decimal=",")
+client_info = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/clients_go_nogo_finished.csv", sep=";", decimal=",")
+
+
+data.rename(columns={'client_id': 'uuid'}, inplace=True)
+data = data.set_index('uuid')
+
+data = data[data['survey_date'] != '2915-10-20']
+data = data[data['survey_date'] >= '2017-01-01']
+# data = data[data['survey_date'] <= '2018-06-30']
+data['survey_date'] = pd.to_datetime(data['survey_date'],infer_datetime_format=True)
+print('Max: {},\nMin {}'.format(data['survey_date'].max(), data['survey_date'].min()))
+data['survey_name'] = data['survey_name'].replace(['Vervallen - Algemene Intake Rughuis', 'Algemene Intake V3.0', 'Vervallen - Algemene Intake'], 'Algemene Intake')
+# data = data.drop('survey_date', axis=1)
+
+
+no_gos = client_info[client_info.got_go == 0]
+data_nogos = data[data.index.isin(no_gos.client_id.unique())]
+latest_nogos = data_nogos[data_nogos['survey_date'] > '2018-06-30']
+latest_nogos.head()
+```
+
+```{python}
+latest_nogos.shape
+```
+
+```{python}
+latest_nogos.loc[(latest_nogos['survey_name'] == 'PDI') & (latest_nogos['score_name'] == 'BeperkingScore'),'score_name'] = 'PDI_BeperkingScore'
+latest_nogos.loc[(latest_nogos['survey_name'] == 'QBPDS') & (latest_nogos['score_name'] == 'BeperkingScore'),'score_name'] = 'QBPDS_BeperkingScore'
+latest_nogos.loc[(latest_nogos['survey_name'] == 'NDI') & (latest_nogos['score_name'] == 'BeperkingScore'),'score_name'] = 'NDI_BeperkingScore'
+```
+
+```{python}
+def count_types_in_row(series):
+    
+    string = 0
+    num_string = 0
+    numerical = 0
+    
+    for cell in data.iloc[:, -1]:
+        if type(cell) == str:
+            if cell.isdecimal():
+                pass
+#                 num_string += 1
+            string +=1
+            
+        elif type(cell) == float:
+            numerical += 1
+        else:
+            print(type(cell))
+
+    print("Strings {} \n".format(string))
+    print("Numerical Strings {} \n".format(num_string))
+    print("Numerical {} \n".format(numerical))
+    
+    return 0 
+```
+
+```{python}
+count_types_in_row(latest_nogos['score_value'])
+```
+
+## Pivot And Drop Columns/ Rows Given Criteria
+
+1. Pivot the table
+2. Drop columns and rows with too many null values
+
+```{python}
+pivoted = latest_nogos.groupby('uuid')['score_name'].value_counts().unstack().fillna(np.nan)
+pivoted.head()
+```
+
+```{python}
+# Only keep columns that are in the larger dataset
+remaining_surveys = ['Algemene Intake', 'Rand 36', 'PDI', 'TSK', 'PHODA-SeV', 'NPRS', 'SBT', 'QBPDS', 'PCI', 'OQ-45.2', 'BSI', 'UCL', 'PCS', 'NDI']
+```
+
+```{python}
+# pivoted.loc[:,pivoted.columns.isin(remaining_scores)]
+```
+
+```{python}
+remaining_scores=data[data['survey_name'].isin(remaining_surveys)]['score_name'].unique()
+```
+
+```{python}
+pivoted = pivoted.loc[:,pivoted.columns.isin(remaining_scores)]
+```
+
+### Drop More Columns
+
+```{python}
+# Drop columns from BSI that have scale
+pivoted_shrinked = pivoted.drop(pivoted_shrinked.filter(regex=("Amb.*")).columns, axis =1)
+
+# Drop the normalized scores columns from BSI
+pivoted_shrinked = pivoted_shrinked.drop(pivoted_shrinked.filter(regex=("_Norm_.*")).columns, axis =1)
+
+# Drop columns that show an age score
+pivoted_shrinked = pivoted_shrinked.drop(pivoted_shrinked.filter(regex=("Age_Score.*")).columns, axis =1)
+
+# Drop columns that show a normal score
+pivoted_shrinked = pivoted_shrinked.drop(pivoted_shrinked.filter(regex=("Normal_Score.*")).columns, axis =1)
+
+# Drop columns that show a pain score
+pivoted_shrinked = pivoted_shrinked.drop(pivoted_shrinked.filter(regex=("Pain_Score.*")).columns, axis =1)
+
+# Drop the UCL all_score to keep only the raw score
+pivoted_shrinked = pivoted_shrinked.drop(pivoted_shrinked.filter(regex=("All_Score.*")).columns, axis =1)
+
+# Drop all Phoda questions scores and keep the average
+pivoted_shrinked = pivoted_shrinked.drop(pivoted_shrinked.filter(regex=("PhodaQuestion_.*")).columns, axis =1)
+
+# Drop QBPDS percentage score
+pivoted_shrinked = pivoted_shrinked.drop('BeperkingPercentage', axis=1)
+
+# Drop open text question
+pivoted_shrinked = pivoted_shrinked.drop('Vraag34', axis=1)
+```
+
+```{python}
+remaining_scores = pivoted_shrinked.columns
+data[data['score_name'].isin(remaining_scores)]['survey_name'].unique()
+```
+
+```{python}
+pivoted_shrinked.shape
+```
+
+```{python}
+import time
+```
+
+```{python}
+def fill_cell_value(pivoted_df, values_df):
+    df = pivoted_df.copy()
+    
+    for i in range(0,df.shape[0]):
+        for j in range(0,df.shape[1]):
+            
+            client_nr = df.index[i]
+            score_name = df.columns[j]
+            client = data.loc[client_nr]
+            cell_val = client.loc[client['score_name'] == score_name, 'score_value']
+            
+            if len(cell_val.values) > 0:
+                df.iloc[i, j] = cell_val.values[0]
+            else:
+                df.iloc[i, j] = np.nan
+    return df
+```
+
+```{python}
+# fill_cell_value(pivoted_shrinked_v2, data)
+pivoted_scores = fill_cell_value(pivoted_shrinked, data)
+```
+
+```{python}
+pivoted_scores.head()
+```
+
+```{python}
+pivoted_scores.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/extra_nogos_pivoted_scores_phi.csv', sep=';')
+```
+
+## Map Categorical Data
+
+
+Here we first remove the categorical data that has a numerical equivalent as we are not interested in the aggregated/processed data and we want the raw outputs. Then, we take in the remaining categorical data and map it to a numerical data type. 
+
+```{python}
+scores = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/extra_nogos_pivoted_scores_phi.csv', sep=';', decimal=',')
+scores.head()
+```
+
+```{python}
+def count_null_in_columns(df):
+    
+    for column in df.columns:
+        num_null = df[column].isna().value_counts(sort=False)
+        
+        if num_null.shape[0] == 2:
+            print("Row {} has {} null values".format(column, num_null[1]))
+        else:
+            print("Row {} has {} null values".format(column, num_null[0]))
+```
+
+```{python}
+# Remove non alphabetical characters 
+for column in scores.columns:
+    
+    if scores[column].dtype == 'object':
+        scores[column] = scores[column].str.replace("[^a-zA-Z ]+", "")
+        
+```
+
+```{python}
+for column in scores:
+    if scores[column].dtype == 'object':
+        mst_common = scores[column].value_counts().index[0]
+        scores[column] = scores[column].fillna(mst_common)
+        
+    
+```
+
+```{python}
+categories = []
+cat_columns = []
+
+for column in scores.columns:
+    
+    if scores[column].dtype == 'object':
+        cat_columns.append(column)
+        categories.append(scores[column].unique())
+```
+
+***The following code section maps categorical data to a number***
+
+```{python}
+map_1 = {'Subklinisch':1, 'Hoog':2}
+map_2 = {'Laag risico':1, 'Middelmatig risico':2, 'Hoog risico':3}
+
+
+scores['HulpeloosheidLevel'] = scores['HulpeloosheidLevel'].map(map_1)
+scores['MagnificatieLevel'] = scores['MagnificatieLevel'].map(map_1)
+scores['RuminatieLevel'] = scores['RuminatieLevel'].map(map_1)
+scores['TotaalLevel'] = scores['TotaalLevel'].map(map_1)
+
+scores['Risico'] = scores['Risico'].map(map_2)
+```
+
+```{python}
+scores.shape
+```
+
+## Attach labels
+
+```{python}
+client_info = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/clients_go_nogo_finished.csv", sep=";", decimal=",")
+client_info.head()
+```
+
+```{python}
+# client_info[client_info.client_id.isin(scores.uuid)]
+```
+
+```{python}
+scores["got_go"] = 0
+scores["finished_treatment"] = np.NaN
+```
+
+```{python}
+scores.head()
+```
+
+```{python}
+scores.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/extra_nogos_formated_scores.csv', sep=';', index=False)
+```
+
+## Attach new data points to datasets
+
+```{python}
+data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_2018.csv",sep=";")
+scores = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/extra_nogos_formated_scores.csv', sep=';')
+scores = scores.loc[:, data.columns]
+merged = data.append(scores)
+merged.to_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_extra_nogo_2018.csv",sep=";",index=False)
+```
+
+```{python}
+
+```

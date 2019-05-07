@@ -1,0 +1,176 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Classifier Y - SK XGBoost (uncorrected)
+
+
+## Imports
+
+```{python}
+# XGBoost
+from xgboost import XGBClassifier
+import xgboost as xgb
+
+# SKLearn
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, average_precision_score
+from sklearn.calibration import CalibratedClassifierCV
+
+# Data processing
+import pandas as pd
+import numpy as np
+
+# Visualization
+import matplotlib.pyplot as plt
+
+# Custom functions
+from src.func.model_func import get_metrics
+from src.func.model_func import save_model
+```
+
+## Import data
+
+```{python}
+# data = h2o.import_file('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_s/data_classifier_s.csv')
+train_data = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_y/unweighted/classifier_y_unweighted_train.csv', sep=";")
+test_data = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_y/unweighted/classifier_y_unweighted_test.csv', sep=";")
+```
+
+```{python}
+X = train_data.iloc[:, :-1]
+y = train_data.iloc[:, -1]
+```
+
+```{python}
+# Split train, test, valid
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=55)
+```
+
+```{python}
+X_train.iloc[:, :-1].values
+```
+
+# Short prior analysis
+
+```{python}
+print("Train data: \n", train_data.finished_treatment.value_counts(normalize=True))
+print("Test data: \n", test_data.finished_treatment.value_counts(normalize=True))
+```
+
+ROC: false alarm rate versus hit rate
+Precision-recall: precision over sensitivity
+
+
+## Custom GridsearchCV function
+
+```{python}
+def get_best_xgb_estimator(X_train, X_test, y_train, y_test, verbose=False):
+    '''
+    :param X_train: dataframe or array with training instances
+    :param X_test: dataframe or array with test instances
+    :param y_train: dataframe or array with training labels
+    :param y_test: dataframe or array with testing labels
+    :param verbose: set to 'True' for a detailed report of the grid search
+    :return: the best estimator and its corresponding score
+    '''
+    
+#     dtrain = xgb.DMatrix(X_train.iloc[:, :-1].values, label=y_train.values, weight=X_train.iloc[:, -1].values)
+#     dtest = xgb.DMatrix(X_test.values, label=y_test.values, weight=X_test.iloc[:, -1].values)
+
+    skf_5 = StratifiedKFold(5, shuffle=True, random_state=1)
+
+#     eliminate_features(X_train, X_test, y_train)
+    # Parameters for the grid search
+    parameters = {
+        'max_depth': [20],
+        'n_estimators': [50],
+        'learning_rate':[0.1, 0.2, 0.3],
+#         'reg_lambda':[0.9, 1],
+        'scale_pos_weight': [0.9],
+        'objective':['binary:logistic'],
+        'eval_metric':["aucpr"]
+    }
+
+    grid = GridSearchCV(XGBClassifier(n_jobs=6), param_grid=parameters, cv=skf_5, scoring="roc_auc", verbose=0)
+    grid.fit(X_train, y_train)
+
+    if verbose:
+        predicted_proba = grid.predict_proba(X_test)[:, 1]
+        predicted_labels = grid.predict(X_test)
+        roc_auc = roc_auc_score(y_test, predicted_proba)
+
+        print(
+            'Best parameters: {}'.format(grid.best_params_),
+            'ROC {}'.format(roc_auc),
+            'Accuracy {}'.format(accuracy_score(y_test, predicted_labels)),
+            'Precision {}'.format(precision_score(y_test, predicted_labels)),
+            'Average precision-recall score: {0:0.2f}'.format(average_precision_score(y_test, predicted_proba))
+        )
+
+    return grid.best_estimator_, grid.best_score_
+```
+
+## Expriments
+
+```{python}
+best_xgb, _ = get_best_xgb_estimator(X_train, X_test, y_train, y_test, verbose=True)
+```
+
+# Best three XGBoost classifiers based on grid search (validation set):
+
+1. ['scale_pos_weight'=0.9, 'learing_rate'=0.3, 'max_depth'=20, 'n_estimators'=50] -> ROC: 0.6667
+
+Let's now test them on the test set.
+
+```{python}
+# Training
+xgbest = XGBClassifier(n_jobs=6, learing_rate=0.3, max_depth=20, n_estimators=50, scale_pos_weight=0.9)
+
+xgbest.fit(X_train, y_train, sample_weight=X_train.iloc[:, -1].values)
+
+# Predicting
+predicted = xgbest.predict_proba(test_data.iloc[:, :-1])
+```
+
+```{python}
+get_metrics(test_data.iloc[:,-1], proba_predicted_y=predicted[:, 1])
+print('Average precision-recall score: {0:0.2f}'.format(average_precision_score(test_data.iloc[:,-1], predicted[:, 1])))
+```
+
+## Calibrate
+
+```{python}
+calib_xgbest = CalibratedClassifierCV(xgbest, cv=5, method='sigmoid')
+
+# Train
+calib_xgbest.fit(X_train, y_train, sample_weight=X_train.iloc[:, -1].values)
+
+# Predict
+predicted_best = calib_xgbest.predict_proba(test_data.iloc[:, :-1])
+
+# Evaluate
+get_metrics(test_data.iloc[:,-1], proba_predicted_y=predicted_best[:, 1])
+print('Average precision-recall score: {0:0.2f}'.format(average_precision_score(test_data.iloc[:,-1], predicted_best[:, 1])))
+```
+
+```{python}
+# Save model
+# save_model(calib_xgbest, '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/models/corrected_classifiers_y_sk/classifier_y_sk_xgboost')
+```
+
+```{python}
+
+```

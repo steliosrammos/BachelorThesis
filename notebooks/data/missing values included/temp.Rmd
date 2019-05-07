@@ -1,0 +1,67 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+import pandas as pd 
+import numpy as np
+```
+
+```{python}
+scores = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/pivoted_scores_2017_2018_with_null.csv', sep=";")
+```
+
+```{python}
+scores.head()
+```
+
+```{python}
+scores.shape
+```
+
+```{python}
+targets = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/clients_go_nogo_finished.csv', sep=";", low_memory=False)
+targets.shape
+```
+
+```{python}
+targets.got_go.value_counts(True)
+```
+
+```{python}
+targets.finished_treatment.value_counts(True)
+```
+
+```{python}
+targets.start_date = pd.to_datetime(targets.start_date)
+```
+
+```{python}
+targets
+```
+
+```{python}
+targets_shrinked = targets[(targets.start_date > '2017-01-01') & (targets.start_date < '2018-10-30') | (targets.start_date.isna())]
+```
+
+```{python}
+targets_shrinked.got_go.value_counts(True)
+```
+
+```{python}
+targets_shrinked.finished_treatment.value_counts(True)
+```
+
+```{python}
+
+```

@@ -1,0 +1,156 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Classifier S - SK XGBoost (with CSI and BDI included)
+
+
+## Imports
+
+```{python}
+# XGBoost
+from xgboost import XGBClassifier
+import xgboost as xgb
+
+# SKLearn
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, average_precision_score
+from sklearn.calibration import CalibratedClassifierCV
+
+# Data processing
+import pandas as pd
+import numpy as np
+
+# Visualization
+import matplotlib.pyplot as plt
+
+# Custom functions
+from src.func.model_func import get_metrics
+from src.func.model_func import save_model
+
+import h2o
+```
+
+```{python}
+h2o.init()
+```
+
+## Import data
+
+```{python}
+# data = h2o.import_file('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_s/data_classifier_s.csv')
+data = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_2018 (with bdi-csi).csv', sep=";")
+```
+
+```{python}
+data = data.drop(["uuid", "finished_treatment"],axis=1)
+data.head()
+```
+
+```{python}
+# Separate labeled data which will be used for training and testing the model
+data_h2o = h2o.H2OFrame(data)
+train ,test = data_h2o.split_frame([0.8], seed=55)
+
+train = train.as_data_frame()
+test= test.as_data_frame()
+```
+
+```{python}
+X = train.iloc[:, :-1]
+y = train.iloc[:, -1]
+```
+
+```{python}
+# Split train, test, valid
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=55)
+```
+
+```{python}
+X_train.iloc[:, :-1].values
+```
+
+## Train
+
+```{python}
+dtrain = xgb.DMatrix(X_train, label=y_train, missing=np.nan)
+dtest = xgb.DMatrix(X_test, label=y_test, missing=np.nan)
+
+# specify parameters via map
+param = {'max_depth':5, 'eta':0.3, 'verbosity':1, 'objective':'binary:logistic'}
+num_round = 2
+bst = xgb.train(param, dtrain, num_round)
+
+# make prediction
+preds = bst.predict(dtest)
+```
+
+```{python}
+preds.shape
+```
+
+```{python}
+get_metrics(y_test, predicted_y=None, proba_predicted_y=preds) 
+```
+
+## Expriments
+
+```{python}
+best_xgb, _ = get_best_xgb_estimator(X_train, X_test, y_train, y_test, verbose=True)
+```
+
+# Best three XGBoost classifiers based on grid search (validation set):
+
+1. ['scale_pos_weight'=0.9, 'learing_rate'=0.3, 'max_depth'=20, 'n_estimators'=50] -> ROC: 0.6667
+
+Let's now test them on the test set.
+
+```{python}
+# Training
+xgbest = XGBClassifier(n_jobs=6, learing_rate=0.3, max_depth=20, n_estimators=50, scale_pos_weight=0.9)
+
+xgbest.fit(X_train, y_train, sample_weight=X_train.iloc[:, -1].values)
+
+# Predicting
+predicted_1 = best_1.predict_proba(test_data.iloc[:, :-1])
+```
+
+```{python}
+get_metrics(test_data.iloc[:,-1], proba_predicted_y=predicted_1[:, 1])
+```
+
+## Calibrate
+
+```{python}
+calib_xgbest = CalibratedClassifierCV(xgbest, cv=5, method='sigmoid')
+
+# Train
+calib_xgbest.fit(X_train, y_train, sample_weight=X_train.iloc[:, -1].values)
+
+# Predict
+predicted_best = calib_xgbest.predict_proba(test_data.iloc[:, :-1])
+
+# Evaluate
+get_metrics(test_data.iloc[:,-1], proba_predicted_y=predicted_best[:, 1])
+```
+
+```{python}
+# Save model
+# save_model(calib_xgbest, '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/models/corrected_classifiers_y_sk/classifier_y_sk_xgboost')
+```
+
+```{python}
+
+```

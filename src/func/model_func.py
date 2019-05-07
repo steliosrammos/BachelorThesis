@@ -19,6 +19,10 @@ from sklearn.metrics import accuracy_score, precision_score, roc_auc_score, aver
 
 from sklearn.externals import joblib
 
+# XGBoost
+from xgboost import XGBClassifier
+import xgboost as xgb
+
 
 def save_model(classifier, filename):
     # try:
@@ -36,27 +40,74 @@ def load_model(filename):
     return model
 
 
-def get_metrics(predicted_s, proba_predicted_s, y_test):
-    accuracy = accuracy_score(y_test, predicted_s)
-    precision = precision_score(y_test, predicted_s)
-    recall = recall_score(y_test, predicted_s)
-    roc_score = roc_auc_score(y_test, proba_predicted_s)
+def get_metrics(y_test, predicted_y=None, proba_predicted_y=None):
 
-    print(
-        'Accuracy: {} \n'.format(accuracy),
-        'Precision: {} \n'.format(precision),
-        'Recall: {} \n'.format(recall),
-        'ROC AUC: {} \n'.format(roc_score)
-    )
+    if predicted_y is not None:
+        accuracy = accuracy_score(y_test, predicted_y)
+        precision = precision_score(y_test, predicted_y)
+        recall = recall_score(y_test, predicted_y)
 
+        print(
+            'Accuracy: {} \n'.format(accuracy),
+            'Precision: {} \n'.format(precision),
+            'Recall: {} \n'.format(recall),
+        )
 
-def compute_corr_coeff(prob_s, prob_predicted_s):
-    corr_coeff = np.zeros(prob_predicted_s.shape[0])
+    if proba_predicted_y is not None:
 
-    for i in range(0, prob_predicted_s.shape[0]):
-        corr_coeff[i] = prob_s / prob_predicted_s[i]
+        roc_score = roc_auc_score(y_test, proba_predicted_y)
 
-    return corr_coeff
+        print('ROC AUC: {} \n'.format(roc_score))
+
+def get_best_xgb_estimator(X_train, X_test, y_train, y_test, grid_search=False, verbose=False):
+    '''
+    :param X_train: dataframe or array with training instances
+    :param X_test: dataframe or array with test instances
+    :param y_train: dataframe or array with training labels
+    :param y_test: dataframe or array with testing labels
+    :param verbose: set to 'True' for a detailed report of the grid search
+    :return: the best estimator and its corresponding score
+    '''
+
+#     skf_5 = StratifiedKFold(5, shuffle=True, random_state=1)
+    skf_10 = StratifiedKFold(10, shuffle=True, random_state=1)
+
+    if grid_search == True: 
+        # Parameters for the grid search
+        parameters = {
+            'max_depth': [20],
+            'n_estimators': [50],
+            'learning_rate':[0.1, 0.2],
+            'reg_lambda':[0.9],
+            'objective':['binary:logistic'],
+            'eval_metric':["auc"]
+        }
+
+        xgbest = GridSearchCV(XGBClassifier(n_jobs=6), param_grid=parameters, cv=skf_10, scoring="roc_auc", verbose=0)
+        
+    else:
+        xgbest = XGBClassifier(n_jobs=6, learing_rate=0.3, max_depth=20, n_estimators=50, scale_pos_weight=0.9)
+    
+    # Calibrate the classifier here
+    calib_xgbest = CalibratedClassifierCV(xgbest, cv=10, method='sigmoid')
+    calib_xgbest.fit(X_train.iloc[:, :-1], y_train, sample_weight=X_train.iloc[:, -1])
+
+    predicted_proba = calib_xgbest.predict_proba(X_test.iloc[:, :-1])[:, 1]
+    predicted_labels = calib_xgbest.predict(X_test.iloc[:, :-1])
+    roc_auc = roc_auc_score(y_test, predicted_proba)
+    pr_auc = average_precision_score(y_test, predicted_proba)
+    
+    if verbose:
+    
+        print(
+#             'Best parameters: {} \n'.format(calib_xgbest.best_params_),
+            'ROC {} \n'.format(roc_auc),
+            'Accuracy {} \n '.format(accuracy_score(y_test, predicted_labels)),
+            'Precision {}\n '.format(precision_score(y_test, predicted_labels)),
+            'Average precision-recall score: {0:0.2f} \n\n'.format(pr_auc)
+        )
+
+    return calib_xgbest, roc_auc, pr_auc
 
 
 def get_best_rfc_estimator(X_train, X_test, y_train, y_test, verbose=False):
@@ -142,8 +193,8 @@ def log_loss(p0, p1):
     return p
 
 
-def plot_calibration_curve(y_test, prob_y, name, ax):
-    fraction_of_positives, mean_predicted_value = calibration_curve(y_test, prob_y)
+def plot_calibration_curve(y_valid, prob_y, name, ax):
+    fraction_of_positives, mean_predicted_value = calibration_curve(y_valid, prob_y)
 
     ax.plot(mean_predicted_value, fraction_of_positives, "s-", label=name)
 
@@ -178,42 +229,42 @@ def build_model(X, y, classifier, verbose = False):
     trial_iterations = 10
 
     # Cross validation training
-    for train_index, test_index in skf.split(X, y):
+    for train_index, valid_index in skf.split(X, y):
         if i <= trial_iterations - 1:
-            X_train, X_test = X[train_index], X[test_index]
-            y_train, y_test = y[train_index], y[test_index]
+            X_train, X_valid = X[train_index], X[valid_index]
+            y_train, y_valid = y[train_index], y[valid_index]
 
             if trial:
-                test_score, training_score, proba_y = classify_rfc(X_train, X_test, y_train, y_test)
-                _, calibrated_proba_y = classify_rfc_calibrated(X_train, X_test, y_train, y_test)
+                valid_score, training_score, proba_y = classify_rfc(X_train, X_valid, y_train, y_valid)
+                _, calibrated_proba_y = classify_rfc_calibrated(X_train, X_valid, y_train, y_valid)
 
-                p = calibrate(test_score, training_score)
+                p = calibrate(valid_score, training_score)
                 custom_calibrated_proba_y = p[:, 1]
 
                 if verbose:
                     print(
-                        'Probability of s (test sample): {} \n'.format(np.count_nonzero(y_test)/len(y_test)),
+                        'Probability of s (validation sample): {} \n'.format(np.count_nonzero(y_valid)/len(y_valid)),
                         'Probability of s (full dataset): {} \n'.format(np.count_nonzero(y)/len(y)),
                         'Training set scores shape: {} \n'.format(training_score.shape),
-                        'Predicted proba shape: {} \n'.format(test_score.shape),
-                        'ROC calibrated custom: {}'.format(roc_auc_score(y_test, custom_calibrated_proba_y))
+                        'Predicted proba shape: {} \n'.format(valid_score.shape),
+                        'ROC calibrated custom: {}'.format(roc_auc_score(y_valid, custom_calibrated_proba_y))
                     )
 
-                plot_calibration_curve(y_test, proba_y, 'RFC CV {}'.format(i), ax)
-                plot_calibration_curve(y_test, calibrated_proba_y, 'RFC calibrated CV {}'.format(i), ax)
-                plot_calibration_curve(y_test, custom_calibrated_proba_y, 'RFC calibrated Venn ABERS CV {}'.format(i),
+                plot_calibration_curve(y_valid, proba_y, 'RFC CV {}'.format(i), ax)
+                plot_calibration_curve(y_valid, calibrated_proba_y, 'RFC calibrated CV {}'.format(i), ax)
+                plot_calibration_curve(y_valid, custom_calibrated_proba_y, 'RFC calibrated Venn ABERS CV {}'.format(i),
                                        ax)
 
             else:
-                estimator, roc_score_grid = classify_function(X_train, X_test, y_train, y_test)
+                estimator, roc_score_grid = classify_function(X_train, X_valid, y_train, y_valid)
 
                 # Calibrate estimator
                 isotonic = CalibratedClassifierCV(estimator, cv=2, method='isotonic')
                 clf = isotonic.fit(X_train, y_train)
 
-                predicted_proba = isotonic.predict_proba(X_test)
+                predicted_proba = isotonic.predict_proba(X_valid)
                 proba_y = predicted_proba[:, 1]
-                roc_score = roc_auc_score(y_test, proba_y)
+                roc_score = roc_auc_score(y_valid, proba_y)
 
                 if verbose:
                     print(
@@ -222,7 +273,7 @@ def build_model(X, y, classifier, verbose = False):
                         '\n'
                     )
                     # Plot calibration curve
-                    plot_calibration_curve(y_test, proba_y, 'RFC calibrated CV {} - ROC {}'.format(i, roc_score), ax)
+                    plot_calibration_curve(y_valid, proba_y, 'RFC calibrated CV {} - ROC {}'.format(i, roc_score), ax)
 
                 classifiers.append(clf)
                 roc_scores.append(roc_score)
@@ -249,13 +300,13 @@ def build_model(X, y, classifier, verbose = False):
 #########################################################################
 
 
-def classify_rfc(X_train, X_test, y_train, y_test, rfc=None):
+def classify_rfc(X_train, X_valid, y_train, y_valid, rfc=None):
     '''
     This function classifies the training instances with an uncalibrated classifier
     :param X_train: dataframe or array with training instances
-    :param X_test: dataframe or array with test instances
+    :param X_valid: dataframe or array with validation instances
     :param y_train: dataframe or array with training labels
-    :param y_test: dataframe or array with testing labels
+    :param y_valid: dataframe or array with validation labels
     :param rfc: random forest classifier, default=None
     :return: the predicted class probabilities, the estimator scores and the predicted y probabilities
     '''
@@ -265,26 +316,26 @@ def classify_rfc(X_train, X_test, y_train, y_test, rfc=None):
                                      oob_score=True)
 
     estimator = rfc.fit(X_train, y_train)
-    predicted_proba = estimator.predict_proba(X_test)
+    predicted_proba = estimator.predict_proba(X_valid)
 
     proba_y = predicted_proba[:, 1]
     training_scores = estimator.oob_decision_function_
 
     print(
         'Average probability of predicted s (non-calibrated): {}'.format(np.mean(proba_y, axis=0)),
-        'ROC uncalibrated: {}'.format(roc_auc_score(y_test, proba_y))
+        'ROC uncalibrated: {}'.format(roc_auc_score(y_valid, proba_y))
     )
 
     return predicted_proba, training_scores, proba_y
 
 
-def classify_rfc_calibrated(X_train, X_test, y_train, y_test, rfc=None):
+def classify_rfc_calibrated(X_train, X_valid, y_train, y_valid, rfc=None):
     '''
     This function classifies the training instances with a calibrated classifier
     :param X_train: dataframe or array with training instances
-    :param X_test: dataframe or array with test instances
+    :param X_valid: dataframe or array with validation instances
     :param y_train: dataframe or array with training labels
-    :param y_test: dataframe or array with testing labels
+    :param y_tey_validst: dataframe or array with validation labels
     :param rfc: random forest classifier, default=None
     :return: the predicted class probabilities, the predicted y probabilities
     '''
@@ -297,13 +348,13 @@ def classify_rfc_calibrated(X_train, X_test, y_train, y_test, rfc=None):
     isotonic = CalibratedClassifierCV(rfc, cv=2, method='isotonic')
     estimator = isotonic.fit(X_train, y_train)
 
-    predicted_proba = isotonic.predict_proba(X_test)
+    predicted_proba = isotonic.predict_proba(X_valid)
 
     proba_y = predicted_proba[:, 1]
 
     #     print(
     #         'Average probability of predicted s (non-calibrated): {} \n'.format(np.mean(proba_y, axis=0)),
-    #         'ROC calibrated: {}'.format(roc_auc_score(y_test, proba_y))
+    #         'ROC calibrated: {}'.format(roc_auc_score(y_valid, proba_y))
     #     )
 
     return predicted_proba, proba_y

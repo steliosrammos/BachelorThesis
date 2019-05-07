@@ -14,7 +14,11 @@ jupyter:
 
 ```{python}
 import pandas as pd
-data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_2018.csv",sep=";")
+```
+
+```{python}
+# data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_2018.csv",sep=";")
+data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_extra_nogo_2018.csv",sep=";")
 data.head()
 ```
 

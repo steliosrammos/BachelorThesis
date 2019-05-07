@@ -1,0 +1,149 @@
+---
+
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Setup Notebook
+
+```{python}
+# Turn off autosave for cleaner version control with jupytext and enable autoreloading of modules before running code
+# %autosave 0
+# %load_ext autoreload
+# %matplotlib notebook
+# %autoreload 2
+```
+
+# Building Classifier Y
+
+
+## Import Libraries
+
+```{python}
+# Python libraries
+import sys
+import pandas as pd
+import math
+import matplotlib.pyplot as pl
+
+# Custom functions
+from src.func.model_func import load_model
+from src.func.data_func import import_data
+from src.func.model_func import get_metrics
+from sklearn.metrics import accuracy_score
+
+# H2O functions
+import h2o
+from h2o.estimators.random_forest import H2ORandomForestEstimator
+from h2o.grid.grid_search import H2OGridSearch
+import matplotlib.pyplot as plt
+```
+
+## Build Classifier Y with SK weights
+
+```{python}
+# Initializing h2o
+h2o.init()
+```
+
+```{python}
+# data = h2o.import_file("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_y/weighted/sk_rf_weights/data_classifier_y_lbld_weighted_sk.csv")
+train_data = h2o.import_file("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_y/weighted/sk_xgb_weights/classifier_y_lbld_weighted_sk_xgb_train.csv")
+test_data = h2o.import_file("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/classifier_y/weighted/sk_xgb_weights/classifier_y_lbld_weighted_sk_xgb_test.csv")
+```
+
+```{python}
+# Set predictor and response column names
+predictors = train_data.columns[0:-2]
+
+# Parse categorical data
+categorical = ['HulpeloosheidLevel', 'MagnificatieLevel', 'RuminatieLevel', 'TotaalLevel', 'educationLevel', 'finished_treatment']
+
+for category in categorical:
+    train_data[category] = train_data[category].asfactor()
+    
+response = "finished_treatment"
+```
+
+```{python}
+# train, calib, test, valid = data.split_frame(ratios=[0.70,0.05, 0.15], seed=1)
+train, valid = train_data.split_frame([0.8], seed=55)
+```
+
+```{python}
+# criteria = {
+#     "strategy": "RandomDiscrete", 
+#     "stopping_rounds": 10,
+#     "stopping_tolerance": 0.001,
+#     "stopping_metric":"auc"
+# }
+hyper_parameters = {
+    'ntrees': [100, 150],
+    'max_depth': [40, 50],
+    'fold_assignment':['Stratified']
+}
+```
+
+```{python}
+estimator = H2ORandomForestEstimator(weights_column="weights", nfolds=10, stopping_rounds=1000, seed=55)
+```
+
+```{python}
+# gs = H2OGridSearch(estimator, hyper_params=hyper_parameters, search_criteria=criteria)
+gs = H2OGridSearch(estimator, hyper_params=hyper_parameters)
+```
+
+```{python}
+gs.train(x=predictors, y=response, training_frame=train, validation_frame=valid)
+```
+
+```{python}
+# H2O DRF corrected with sklearn weights
+sorted_grid = gs.get_grid(sort_by='auc',decreasing=True)
+
+best_max_depth  = sorted_grid.sorted_metric_table()['max_depth'][0]
+best_ntrees     = sorted_grid.sorted_metric_table()['ntrees'][0]
+best_auc        = sorted_grid.sorted_metric_table()['auc'][0]
+best_fold_assignment = sorted_grid.sorted_metric_table()['fold_assignment'][0]
+
+print('Best max_depth.....', best_max_depth)
+print('Best ntrees........', best_ntrees)
+print('Best auc...........', best_auc)
+print('Best fold assignment...........', best_fold_assignment)
+```
+
+```{python}
+best_drf = sorted_grid[0]
+```
+
+```{python}
+predictions = best_drf.predict(test_data).as_data_frame()
+predict_labels = predictions['predict']
+true_labels = test_data['finished_treatment'].as_data_frame().values
+```
+
+```{python}
+print("Accuracy:", accuracy_score(true_labels, predict_labels))
+get_metrics(test_data.as_data_frame().iloc[:,-1], proba_predicted_y=predictions["p1"].values)
+```
+
+```{python}
+# model_path = h2o.save_model(model=best_drf, path="/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/models/corrected_classifiers_y", force=True)
+```
+
+```{python}
+# model_path
+```
