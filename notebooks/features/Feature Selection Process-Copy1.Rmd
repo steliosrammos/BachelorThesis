@@ -25,9 +25,9 @@ import re
 ## Import Data
 
 ```{python}
-data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/raw/client_scores_full.csv", sep=";", decimal=",")
+data = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/raw/client_scores_full_updated.csv", sep=";", decimal=",")
 data.rename(columns={'client_id': 'uuid'}, inplace=True)
-data = data.set_index('uuid')
+# data = data.set_index('uuid')
 
 data = data[data['survey_date'] != '2915-10-20']
 data = data[data['survey_date'] >= '2017-01-01']
@@ -43,40 +43,47 @@ data.head()
 data.loc[(data['survey_name'] == 'PDI') & (data['score_name'] == 'BeperkingScore'),'score_name'] = 'PDI_BeperkingScore'
 data.loc[(data['survey_name'] == 'QBPDS') & (data['score_name'] == 'BeperkingScore'),'score_name'] = 'QBPDS_BeperkingScore'
 data.loc[(data['survey_name'] == 'NDI') & (data['score_name'] == 'BeperkingScore'),'score_name'] = 'NDI_BeperkingScore'
+
+data.loc[(data['survey_name'] == 'SBT') & (data['score_name'] == 'TotaalScore'),'score_name'] = 'SBT_TotaalScore'
+data.loc[(data['survey_name'] == 'PCS') & (data['score_name'] == 'TotaalScore'),'score_name'] = 'PCS_TotaalScore'
 ```
 
 ```{python}
-def count_types_in_row(series):
+# def count_types_in_row(series):
     
-    string = 0
-    num_string = 0
-    numerical = 0
+#     string = 0
+#     num_string = 0
+#     numerical = 0
     
-    for cell in data.iloc[:, -1]:
-        if type(cell) == str:
-            if cell.isdecimal():
-                pass
-#                 num_string += 1
-            string +=1
+#     for cell in data.iloc[:, -1]:
+#         if type(cell) == str:
+#             if cell.isdecimal():
+#                 pass
+# #                 num_string += 1
+#             string +=1
             
-        elif type(cell) == float:
-            numerical += 1
-        else:
-            print(type(cell))
+#         elif type(cell) == float:
+#             numerical += 1
+#         else:
+#             print(type(cell))
 
-    print("Strings {} \n".format(string))
-    print("Numerical Strings {} \n".format(num_string))
-    print("Numerical {} \n".format(numerical))
+#     print("Strings {} \n".format(string))
+#     print("Numerical Strings {} \n".format(num_string))
+#     print("Numerical {} \n".format(numerical))
     
-    return 0 
+#     return 0 
 ```
 
 ```{python}
-count_types_in_row(data['score_value'])
+# count_types_in_row(data['score_value'])
 ```
 
 ```{python}
 data.survey_name.unique()
+```
+
+```{python}
+data.shape
 ```
 
 ```{python}
@@ -89,16 +96,20 @@ data.survey_name.unique()
 2. Drop columns and rows with too many null values
 
 ```{python}
-data.shape
+data.head()
+```
+
+```{python}
+pivoted = data.groupby(['uuid','score_name']).score_value.first().unstack()
+```
+
+```{python}
+# pivoted = data.groupby('uuid')['score_name'].value_counts().unstack().fillna(np.nan)
+# pivoted.head()
 ```
 
 ```{python}
 pivoted.shape
-```
-
-```{python}
-pivoted = data.groupby('uuid')['score_name'].value_counts().unstack().fillna(np.nan)
-pivoted.head()
 ```
 
 ### Drop Columns With Too Many Missing Values
@@ -172,7 +183,7 @@ pivoted_shrinked.head()
 ```
 
 ```{python}
-pivoted_shrinked.head()
+pivoted_shrinked.shape
 ```
 
 ```{python}
@@ -187,6 +198,9 @@ pivoted_shrinked_v2 = pivoted_shrinked
 ```
 
 ```{python}
+# Drop levels 
+pivoted_shrinked_v2 = pivoted_shrinked_v2.drop(pivoted_shrinked_v2.filter(regex=(".*Level")).columns, axis =1)
+
 # Drop columns from BSI that have scale
 pivoted_shrinked_v2 = pivoted_shrinked_v2.drop(pivoted_shrinked_v2.filter(regex=("Amb.*")).columns, axis =1)
 
@@ -212,7 +226,7 @@ pivoted_shrinked_v2 = pivoted_shrinked_v2.drop(pivoted_shrinked_v2.filter(regex=
 pivoted_shrinked_v2 = pivoted_shrinked_v2.drop('BeperkingPercentage', axis=1)
 
 # Drop open text question
-pivoted_shrinked_v2 = pivoted_shrinked_v2.drop('Vraag34', axis=1)
+# pivoted_shrinked_v2 = pivoted_shrinked_v2.drop('Vraag34', axis=1)
 ```
 
 ```{python}
@@ -225,103 +239,12 @@ pivoted_shrinked_v2.shape
 ```
 
 ```{python}
-import time
+# Save with missing values
+pivoted_shrinked_v2.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/pivoted_scores_with_missing.csv', sep=';')
 ```
 
 ```{python}
-client.stack()
-```
-
-```{python}
-def fill_cell_value(pivoted_df, values_df):
-    df = pivoted_df.copy()
-    
-    for i in range(0,df.shape[0]):
-        for j in range(0,df.shape[1]):
-            
-            client_nr = df.index[i]
-            score_name = df.columns[j]
-            client = values_df.loc[client_nr]
-            cell_val = client.loc[client['score_name'] == score_name, 'score_value']
-            
-            if len(cell_val.values) > 0:
-                df.iloc[i, j] = cell_val.values[0]
-            else:
-                df.iloc[i, j] = np.nan
-    return df
-```
-
-```{python}
-df.at[-9214014786609792531, 'PhodaQuestion_1']
-```
-
-```{python}
-cell_val = client.at[client['score_name'] == 'arbeidsSituatie_Raw', 'score_value']
-cell_val
-```
-
-```{python}
-df = pivoted_shrinked.copy()
-    
-for i in range(0,df.shape[0]):
-    if i < 100:
-        client_nr = df.index[i]
-        client = data.loc[client_nr]
-        for column in client.score_name:
-            cell_val = client.loc[client['score_name'] == column, 'score_value']
-            print(cell_val)
-            df.at[client_nr, column] = cell_val
-```
-
-```{python}
-
-```
-
-```{python}
-df.loc[client_nr]
-```
-
-```{python}
-client_nr = df.index[i]
-score_name = df.columns[0]
-client = data.loc[client_nr]
-client['score_name']
-# cell_val = client.loc[client['score_name'] == score_name, 'score_value']
-# cell_val
-```
-
-```{python}
-client
-```
-
-```{python}
-# df.tail(2000)
-```
-
-```{python}
-pivoted_shrinked.loc[9031081855826799766]
-```
-
-```{python}
-# fill_cell_value(pivoted_shrinked_v2, data)
-# pivoted_scores = fill_cell_value(pivoted_shrinked, data)
-```
-
-```{python}
-# pivoted_scores_with_missing = fill_cell_value(pivoted, data)
-# pivoted_scores.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/pivoted_scores_phi_v4.csv', sep=';')
-```
-
-```{python}
-# pivoted_scores_with_missing
-```
-
-```{python}
-pivoted_scores.head()
-```
-
-```{python}
-pivoted_scores.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/pivoted_scores_full_2017_2018.csv', sep=';')
+# pivoted_scores.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/pivoted_scores_full_2017_2018.csv', sep=';')
 ```
 
 ## Map Categorical Data
@@ -330,7 +253,7 @@ pivoted_scores.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Y
 Here we first remove the categorical data that has a numerical equivalent as we are not interested in the aggregated/processed data and we want the raw outputs. Then, we take in the remaining categorical data and map it to a numerical data type. 
 
 ```{python}
-scores = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/pivoted_scores_phi_v3.csv', sep=';', decimal=',')
+scores = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/pivoted_scores_with_missing.csv', sep=';', decimal=',')
 scores.head()
 ```
 
@@ -378,16 +301,20 @@ for column in scores.columns:
 ***The following code section maps categorical data to a number***
 
 ```{python}
+scores['TotalScore'].unique()
+```
+
+```{python}
 map_1 = {'Subklinisch':1, 'Hoog':2}
 map_2 = {'Laag risico':1, 'Middelmatig risico':2, 'Hoog risico':3}
+map_3 = {'Subklinisch':1, 'Milde':2, 'Gemiddeld':2, 'Ernstig': 3, 'Zeer Ernstig': 4}
 
-
-scores['HulpeloosheidLevel'] = scores['HulpeloosheidLevel'].map(map_1)
-scores['MagnificatieLevel'] = scores['MagnificatieLevel'].map(map_1)
-scores['RuminatieLevel'] = scores['RuminatieLevel'].map(map_1)
-scores['TotaalLevel'] = scores['TotaalLevel'].map(map_1)
-
+# scores['HulpeloosheidLevel'] = scores['HulpeloosheidLevel'].map(map_1)
+# scores['MagnificatieLevel'] = scores['MagnificatieLevel'].map(map_1)
+# scores['RuminatieLevel'] = scores['RuminatieLevel'].map(map_1)
+# scores['TotaalLevel'] = scores['TotaalLevel'].map(map_1)
 scores['Risico'] = scores['Risico'].map(map_2)
+scores['TotalScore'] = scores['TotalScore'].map(map_3)
 ```
 
 ```{python}
@@ -402,13 +329,13 @@ data[data['score_name'].isin(remaining_scores)]['score_name'].unique()
 ```
 
 ```{python}
-scores.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/formated_scores_v3.csv', sep=';', index=False)
+scores.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/formated_scores_with_missing.csv', sep=';', index=False)
 ```
 
 ### Add labels
 
 ```{python}
-scores = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/formated_scores_v3.csv', sep=';')
+scores = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/formated_scores_with_missing.csv', sep=';')
 ```
 
 ```{python}
@@ -426,13 +353,13 @@ merged.head()
 ```
 
 ```{python}
-merged.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/data_2018_v2.csv', index=False, sep=";")
+merged.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/data_2018_with_missing.csv', index=False, sep=";")
 ```
 
 ### Add extra No-go's
 
 ```{python}
-data = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/data_2018_v2.csv', sep=';')
+data = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/processed/data_2018_with_missing.csv', sep=';')
 scores = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/extra_nogos_formated_scores.csv', sep=';')
 scores = scores.loc[:, data.columns]
 merged = data.append(scores)
@@ -475,7 +402,7 @@ merged.got_go.value_counts(True)
 ```
 
 ```{python}
-merged.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_extra_nogo_2018_v2.csv', index=False, sep=';')
+merged.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_extra_nogo_2018_with_missing.csv', index=False, sep=';')
 ```
 
 ```{python}

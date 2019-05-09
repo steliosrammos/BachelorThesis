@@ -18,48 +18,22 @@ import numpy as np
 ```
 
 ```{python}
-scores = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/pivoted_scores_2017_2018_with_null.csv', sep=";")
+scores = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_extra_nogo_2018_v2.csv", sep=";")
+
 ```
 
 ```{python}
-scores.head()
+print(scores.shape)
+scores.columns
 ```
 
 ```{python}
-scores.shape
+scores_v2 = pd.read_csv("/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/data_extra_nogo_2018_with_missing.csv", sep=";")
 ```
 
 ```{python}
-targets = pd.read_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/interim/clients_go_nogo_finished.csv', sep=";", low_memory=False)
-targets.shape
-```
-
-```{python}
-targets.got_go.value_counts(True)
-```
-
-```{python}
-targets.finished_treatment.value_counts(True)
-```
-
-```{python}
-targets.start_date = pd.to_datetime(targets.start_date)
-```
-
-```{python}
-targets
-```
-
-```{python}
-targets_shrinked = targets[(targets.start_date > '2017-01-01') & (targets.start_date < '2018-10-30') | (targets.start_date.isna())]
-```
-
-```{python}
-targets_shrinked.got_go.value_counts(True)
-```
-
-```{python}
-targets_shrinked.finished_treatment.value_counts(True)
+print(scores_v2.shape)
+scores_v2.columns
 ```
 
 ```{python}
