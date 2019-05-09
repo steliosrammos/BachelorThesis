@@ -1,14 +1,11 @@
 import pandas as pd
 import numpy as np
-from imblearn.over_sampling import SMOTE, RandomOverSampler
-from imblearn.combine import SMOTETomek
-from imblearn.under_sampling import ClusterCentroids, RandomUnderSampler
+from imblearn.over_sampling import SMOTE
 from nonconformist.icp import IcpClassifier
 from nonconformist.nc import NcFactory, MarginErrFunc
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import roc_auc_score, average_precision_score, precision_score, accuracy_score, brier_score_loss, confusion_matrix
-from sklearn.model_selection import StratifiedKFold, GridSearchCV, LeaveOneOut
-from xgboost import XGBClassifier
+from sklearn.model_selection import StratifiedKFold, GridSearchCV
 
 
 class ConformalBiasCorrection:
@@ -41,11 +38,7 @@ class ConformalBiasCorrection:
         y = data_s.iloc[:, -1]
 
         # Startified k-fold
-        sss = StratifiedKFold(n_splits=20, random_state=55)
-        # sss.get_n_splits(X, y)
-
-        # Leave one out
-        # loo = LeaveOneOut()
+        sss = StratifiedKFold(n_splits=10, random_state=55)
 
         if type(y) == np.ndarray:
 
@@ -64,9 +57,6 @@ class ConformalBiasCorrection:
         fold_num = 0
 
         for train_index, valid_index in sss.split(X, y):
-        # for train_index, valid_index in loo.split(X):
-
-            # print('Fold {} \n'.format(fold_num))
 
             X_train, X_valid = X.iloc[train_index], X.iloc[valid_index]
             y_train, y_valid = y.iloc[train_index], y.iloc[valid_index]
@@ -76,10 +66,6 @@ class ConformalBiasCorrection:
             parameters = self.clf_parameters['classifier_s']
 
             best_estimator, roc_auc, pr_auc, brier_loss = self.get_best_estimator(classifier_s, parameters, X_train, X_valid, y_train, y_valid, grid_search=False, verbose=False)
-            # best_estimator, pr_auc, brier_loss = self.get_best_estimator(classifier_s, parameters, X_train,
-            #                                                                       X_valid, y_train, y_valid,
-            #                                                                       grid_search=False, verbose=False)
-            # print("Brier Loss: {} \n".format(brier_loss))
 
             # Compute weights for test examples
             predicted_prob_s.loc[X_valid.index] = best_estimator.predict_proba(X_valid)[:, 1]
@@ -114,7 +100,6 @@ class ConformalBiasCorrection:
 
         # Split data into labeled and unlabeled sets
         data_lbld = data_y[~data_y.finished_treatment.isna()]
-        # data_lbld = data_lbld.dropna()
 
         data_unlbld = data_y[data_y.finished_treatment.isna()]
         total_unlbld = data_unlbld.shape[0]
@@ -134,7 +119,7 @@ class ConformalBiasCorrection:
 
         # Initialize average ROC AUC:
         # best_avrg_roc_auc = init_avrg_roc_auc
-        pr_aucs = []
+        # pr_aucs = []
 
         # Initialize stopping variable
         stop = False
@@ -177,7 +162,6 @@ class ConformalBiasCorrection:
             remain_unlbld = data_unlbld.shape[0]
 
             if data_unlbld.shape[0] > 0 and labels.shape[0] != 0 and ratio <= 0.5 and remain_unlbld > total_unlbld * 0.8:
-            # if data_unlbld.shape[0] > 0 and labels.shape[0] != 0 and iterations <10:
                 iterations += 1
                 last_newly_labeled_indeces = all_newly_labeled_indeces
 
@@ -220,9 +204,6 @@ class ConformalBiasCorrection:
 
         clf = classifier_y.set_params(**parameters_y)
 
-        # data_lbld = data_lbld.dropna()
-        # new_lbld = new_lbld.dropna()
-
         X = data_lbld.iloc[:, :-2]
         y = data_lbld.iloc[:, -1]
 
@@ -243,11 +224,6 @@ class ConformalBiasCorrection:
             X_train, X_calib = X.iloc[train_index], X.iloc[calib_index]
             y_train, y_calib = y.iloc[train_index], y.iloc[calib_index]
 
-            # with/out correction
-            #         clf.fit(X_train.iloc[:, :-1], y_train, sample_weight=X_train.iloc[:, -1])
-            #         clf.fit(X_train.iloc[:, :-1], y_train)
-
-            # with/out smote
             if self.rebalancing_parameters['SMOTE_y']:
                 X_train, y_train = smote.fit_resample(X_train, y_train)
 
@@ -283,8 +259,6 @@ class ConformalBiasCorrection:
 
         return ccp_predictions
 
-    # STATIC/CLASS METHODS
-    # @staticmethod
     def get_best_estimator(self, classifiers_s, parameters, X_train, X_valid, y_train, y_valid, grid_search=False, verbose=False):
 
         if grid_search:
@@ -296,7 +270,6 @@ class ConformalBiasCorrection:
 
         if self.rebalancing_parameters['SMOTE_s']:
             smote = SMOTE(0.9, random_state=55)
-            # ros = RandomOverSampler(random_state=55)
             X_train, y_train = smote.fit_resample(X_train, y_train)
 
         # Calibrate the classifier here
@@ -335,60 +308,6 @@ class ConformalBiasCorrection:
         ratio = negatives / positives
 
         return ratio
-
-    # def evaluate(self, data_lbld, new_lbld):
-    #     '''
-    #         Evaluate the model with the newly labeled data.
-    #         Metric: ROC AUC
-    #     '''
-    #     # Compute class ratio
-    #     ratio = self.calculate_ratio(data_lbld, new_lbld)
-    #
-    #     # Create instance of classifier
-    #     parameters = self.clf_parameters['classifier_y']
-    #     parameters['scale_pos_weight'] = ratio
-    #
-    #     model = self.classifiers['classifier_y']
-    #     model.set_params(**parameters)
-    #
-    #     X = data_lbld.iloc[:, :-1]
-    #     y = data_lbld.iloc[:, -1]
-    #
-    #     # Initialize roc array
-    #     roc_aucs = []
-    #
-    #     skf_10 = StratifiedKFold(10, random_state=55)
-    #     skf_5 = StratifiedKFold(5, random_state=55)
-    #
-    #     # Split data into training and validating set
-    #     for train_index, valid_index in skf_10.split(X, y):
-    #         X_train, X_valid = X.iloc[train_index], X.iloc[valid_index]
-    #         y_train, y_valid = y.iloc[train_index], y.iloc[valid_index]
-    #
-    #         X_new = new_lbld.iloc[:, :-1]
-    #         y_new = new_lbld.iloc[:, -1]
-    #
-    #         X_train = X_train.append(X_new, sort=False)
-    #         y_train = y_train.append(y_new)
-    #
-    #         calibrated_model = CalibratedClassifierCV(model, cv=skf_5, method='isotonic')
-    #
-    #         # for column in X_train.columns:
-    #         #     print(X_train[column].isna().value_counts())
-    #
-    #         calibrated_model.fit(X_train.iloc[:, :-1], y_train, sample_weight=X_train.iloc[:, -1])
-    #         #         calibrated_model.fit(X_train.iloc[:, :-1], y_train)
-    #
-    #         # Predict labels
-    #         predicted_proba = calibrated_model.predict_proba(X_valid.iloc[:, :-1])[:, 1]
-    #
-    #         # Compute ROC AUC
-    #         roc_auc = roc_auc_score(y_valid, predicted_proba)
-    #         roc_aucs.append(roc_auc)
-    #
-    #     avrg_roc = np.array(roc_aucs).mean()
-    #
-    #     return avrg_roc
 
     def  get_best_pred_indeces(self, predictions, threshold, true_ratio):
         '''
@@ -450,7 +369,6 @@ class ConformalBiasCorrection:
 
         if self.verbose >= 2:
             print('Oversampled {} examples by factor of {}.'.format(num_oversampled, factor))
-            # print('Oversampled indeces: {}'.format(oversampled_indeces))
 
         return oversampled_indeces
 
@@ -520,4 +438,56 @@ class ConformalBiasCorrection:
 
         return uncorrected_roc_auc, corrected_roc_auc, feature_importances
 
-
+# def evaluate(self, data_lbld, new_lbld):
+    #     '''
+    #         Evaluate the model with the newly labeled data.
+    #         Metric: ROC AUC
+    #     '''
+    #     # Compute class ratio
+    #     ratio = self.calculate_ratio(data_lbld, new_lbld)
+    #
+    #     # Create instance of classifier
+    #     parameters = self.clf_parameters['classifier_y']
+    #     parameters['scale_pos_weight'] = ratio
+    #
+    #     model = self.classifiers['classifier_y']
+    #     model.set_params(**parameters)
+    #
+    #     X = data_lbld.iloc[:, :-1]
+    #     y = data_lbld.iloc[:, -1]
+    #
+    #     # Initialize roc array
+    #     roc_aucs = []
+    #
+    #     skf_10 = StratifiedKFold(10, random_state=55)
+    #     skf_5 = StratifiedKFold(5, random_state=55)
+    #
+    #     # Split data into training and validating set
+    #     for train_index, valid_index in skf_10.split(X, y):
+    #         X_train, X_valid = X.iloc[train_index], X.iloc[valid_index]
+    #         y_train, y_valid = y.iloc[train_index], y.iloc[valid_index]
+    #
+    #         X_new = new_lbld.iloc[:, :-1]
+    #         y_new = new_lbld.iloc[:, -1]
+    #
+    #         X_train = X_train.append(X_new, sort=False)
+    #         y_train = y_train.append(y_new)
+    #
+    #         calibrated_model = CalibratedClassifierCV(model, cv=skf_5, method='isotonic')
+    #
+    #         # for column in X_train.columns:
+    #         #     print(X_train[column].isna().value_counts())
+    #
+    #         calibrated_model.fit(X_train.iloc[:, :-1], y_train, sample_weight=X_train.iloc[:, -1])
+    #         #         calibrated_model.fit(X_train.iloc[:, :-1], y_train)
+    #
+    #         # Predict labels
+    #         predicted_proba = calibrated_model.predict_proba(X_valid.iloc[:, :-1])[:, 1]
+    #
+    #         # Compute ROC AUC
+    #         roc_auc = roc_auc_score(y_valid, predicted_proba)
+    #         roc_aucs.append(roc_auc)
+    #
+    #     avrg_roc = np.array(roc_aucs).mean()
+    #
+    #     return avrg_roc
