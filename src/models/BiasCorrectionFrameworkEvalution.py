@@ -35,19 +35,12 @@ ratio = counts[0]/counts[1]
 classifier_s = XGBClassifier()
 parameters_s = {'n_jobs': -1, 'reg_lambda': 0.8, 'max_delta_step': 2, 'learing_rate': 0.3, 'max_depth': 6, 'n_estimators': 50, 'objective':'binary:logistic', 'random_state': 55}
 
-# Random Forest
-# classifier_s = RandomForestClassifier()
-# parameters_s = {'n_jobs': 6, 'max_depth': 30, 'n_estimators': 150, 'random_state': 55}
-
-# SVM
-# classifier_s = SVC()
-# parameters_s = {'probability':True, 'random_state':55}
-
 ######### CLASSIFIER y #############
 # XGBoost
 classifier_y = XGBClassifier()
 parameters_y = {'n_jobs': -1, 'learning_rate': 0.3, 'max_depth': 3, 'n_estimators': 10, 'scale_pos_weight': 0.5, 'objective':'binary:logistic', 'random_state': 55}
 
+# Set classifiers and their parameters
 classifiers = {
     'classifier_s': classifier_s,
     'classifier_y': classifier_y
@@ -58,20 +51,21 @@ clf_parameters = {
     'classifier_y': parameters_y
 }
 
+# Set rebalancing and bias correction parameters
 rebalancing_parameters = {'SMOTE_s': False, 'SMOTE_y': False, 'conformal_oversampling': True}
 bias_correction_parameters = {'correct_bias': True}
 
-# Run the framework
+# Initialize some variables
 sss = StratifiedKFold(n_splits=10, random_state=1)
 
 X = data.iloc[:, :-2]
 y = data.iloc[:, -2]
 
-uncorrected_rocs = []
-corrected_rocs = []
+uncorrected_rocs_y = []
+corrected_rocs_y = []
 
-rocs = []
-briers = []
+rocs_s = []
+briers_s = []
 
 all_feature_importances = []
 # framework = ConformalBiasCorrection(train_data=data, test_data=[], classifiers=classifiers, clf_parameters=clf_parameters, rebalancing_parameters=rebalancing_parameters, verbose=3)
@@ -85,21 +79,21 @@ for train_index, valid_index in sss.split(X, y):
 
     if bias_correction_parameters['correct_bias']:
         roc, brier = framework.compute_correction_weights()
-        rocs.append(roc)
-        briers.append(brier)
+        rocs_s.append(roc)
+        briers_s.append(brier)
     # framework.ccp_correct()
     #
     # uncorrected_roc, corrected_roc, feature_importances = framework.final_evaluation()
-    # uncorrected_rocs.append(uncorrected_roc)
-    # corrected_rocs.append(corrected_roc)
+    # uncorrected_rocs_y.append(uncorrected_roc)
+    # corrected_rocs_y.append(corrected_roc)
     # all_feature_importances.append(feature_importances)
 #
-# print("Final mean test ROC AUC (uncorrected): {}".format(np.array(uncorrected_rocs).mean()))
-# print("Final mean test ROC AUC (corrected): {}".format(np.array(corrected_rocs).mean()))
+# print("Final mean test ROC AUC (uncorrected): {}".format(np.array(uncorrected_rocs_y).mean()))
+# print("Final mean test ROC AUC (corrected): {}".format(np.array(corrected_rocs_y).mean()))
 # print(np.array(all_feature_importances))
 
-print("Final mean S ROC : {}".format(np.array(rocs).mean()))
-print("Final mean S brier: {}".format(np.array(briers).mean()))
+print("Final mean S ROC : {}".format(np.array(rocs_s).mean()))
+print("Final mean S brier: {}".format(np.array(briers_s).mean()))
 
 # exit()
 

@@ -30,7 +30,6 @@ class ConformalBiasCorrection:
             print('Start computing weights W')
 
         data_s = self.train_data.drop(['uuid', 'finished_treatment'], axis=1)
-        data_s = data_s.fillna(self.train_data.mean())
 
         # Shuffle rows
         data_s = data_s.sample(frac=1, random_state=10)
