@@ -1,0 +1,376 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets.samples_generator import make_blobs
+
+from sklearn.neighbors import KNeighborsClassifier
+
+from sklearn.metrics.pairwise import euclidean_distances
+from scipy.io import savemat
+```
+
+```{python}
+# %matplotlib notebook
+```
+
+```{python}
+# from https://gist.github.com/jakevdp/91077b0cae40f8f8244a
+def discrete_cmap(N, base_cmap=None):
+    """Create an N-bin discrete colormap from the specified input map"""
+
+    # Note that if base_cmap is a string or None, you can simply do
+    #    return plt.cm.get_cmap(base_cmap, N)
+    # The following works for string, None, or a colormap instance:
+
+    base = plt.cm.get_cmap(base_cmap)
+    color_list = base(np.linspace(0, 1, N))
+    cmap_name = base.name + str(N)
+    return base.from_list(cmap_name, color_list, N)
+```
+
+Let's generate the training set.
+
+2 classes
+Mixture of Gaussians, centers at the four corners of a square
+
+```{python}
+xCls = 2
+yCls = 2
+
+labels = xCls*yCls
+
+xx = np.linspace(-1, 1, xCls)
+yy = np.linspace(-1, 1, yCls)
+xx, yy = np.meshgrid(xx, yy)
+n_centres = np.hstack((np.ravel(xx)[:, np.newaxis],
+                       np.ravel(yy)[:, np.newaxis]))
+```
+
+```{python}
+np.random.seed(2)
+shuf = np.random.choice(range(150),150, replace=False)
+Xtest,ytest = make_blobs(n_samples=150, centers=n_centres, random_state=1,cluster_std=0.3)  # different random state
+Xtest,ytest = Xtest[shuf],ytest[shuf]
+ytest = np.where((ytest==3)|(ytest==0),0, 1)
+```
+
+```{python}
+X, y = make_blobs(n_samples=150, centers=n_centres, random_state=0,cluster_std=0.5)
+
+y = np.where((y==3)|(y==0),0, 1)
+```
+
+```{python}
+_markers = ["o","x"]
+_colors = ["r","g"]
+f,ax = plt.subplots()
+for i,(m,c) in enumerate(zip(_markers,_colors)):
+    ax.scatter(X[y==i,0],X[y==i,1],c=c,marker=m)
+
+ax.grid()
+
+for i,(coords,c) in enumerate(zip(n_centres,[0,1,1,0])):
+    ax.text(coords[0],coords[1],str(c),fontsize=28,ha="center",va="center")
+ax.set_aspect('equal')
+ax.set_title('Synthetic data set')
+```
+
+## Venn-ABERS predictor
+
+
+Let $s_0(x)$ be the scoring function for $(z_1,z_2,\dots,z_\ell,(x,0))$, $s_1(x)$ be the scoring function for $(z_1,z_2,\dots,z_\ell,(x,1))$, $g_0(x)$ be the isotonic calibrator for
+$$((s_0(x_1),y_1),(s_0(x_2),y_2),\dots,(s_0(x_\ell),y_\ell),(s_0(x),0))$$
+and $g_1(x)$
+$$((s_1(x_1),y_1),(s_1(x_2),y_2),\dots,(s_1(x_\ell),y_\ell),(s_1(x),1))$$
+
+The multiprobabilistic prediction output by the Venn-Abers predictor is $(p_0,p_1)$, where $p_0:=g_0(s_0(x))$ and $p_1:=g_1(s_1(x))$
+
+
+
+### Scoring function: 1NN as underlying
+
+
+Let's use 1NN as underlying.
+
+A scoring function based on 1NN might be:
+$$\frac{d_{0,i}}{d_{1,i}}$$
+where $$d_{0,i} := \mathop{\text{min}}_{j=1,2,\dots,\ell+1 \atop y_j=0} d(x_j,x_i)$$
+and
+$$d_{1,i} := \mathop{\text{min}}_{j=1,2,\dots,\ell+1 \atop y_j=1} d(x_j,x_i)$$
+(i.e. $d_{0,i}$ is the distance to the nearest neighbour with label 0, etc.)
+and, as usual, $x_{\ell+1}$ is the test example.
+
+```{python}
+import sklearn.metrics.pairwise
+def scoring_1NN(X,y,xt): 
+    dist = sklearn.metrics.pairwise.euclidean_distances(X,xt)
+    score = np.min(dist[y==0],axis=0)/np.min(dist[y==1],axis=0)
+    return score
+```
+
+```{python}
+xt = np.array([[1,0],[-1,-1],[0,0]])
+```
+
+```{python}
+dist = euclidean_distances(X,xt)
+```
+
+```{python}
+score = np.min(dist[y==0],axis=0)/np.min(dist[y==1],axis=0)
+```
+
+```{python}
+score
+```
+
+### Isotonic calibrator
+
+
+The *isotonic calibrator* $g$ for $((s(x_1),y_1),(s(x_2),y_2),\dots,(s(x_\ell),y_\ell))$ is the increasing function on $s(x_1),s(x_2),\dots,s(x_\ell)$ that maximizes the likelihood
+$$\prod_{i=1,2,\dots,\ell}p_i$$
+where:
+$$
+    p_i= 
+\begin{cases}
+   g(s(x_i))    & \text{if } y_i=1\\
+   1-g(s(x_i))  & \text{if } y_i=0\\
+\end{cases}
+$$
+
+
+The isotonic calibrator can be found as isotonic regression on $(s(x_1),y_1),(s(x_2),y_2),\dots,(s(x_\ell),y_\ell))$
+
+
+The greatest convex minorant of the cumulative sums is the graph of the supremum of all convex functions whose graphs lie below the graph of the cumulative sums. Holding a piece of taut string at start and end points would give the convex minorant. (p65 of Cox & Cox, Multidimensional Scaling)
+
+```{python}
+augX = np.r_[X,np.array([0,0],ndmin=2)]
+augY = np.r_[y,0]
+```
+
+```{python}
+augDist = euclidean_distances(augX,augX)
+augDist.shape
+```
+
+```{python}
+augDist[augDist==0]=np.inf
+```
+
+```{python}
+from sklearn.isotonic import IsotonicRegression
+```
+
+```{python}
+ir = IsotonicRegression(y_min=0,y_max=1)
+```
+
+```{python}
+scores = np.empty_like(augY,dtype=float)
+for i in range(augDist.shape[0]):
+    dc = np.delete(augDist[i],i)
+    yc = np.delete(augY,i)
+    
+    scores[i] = np.min(dc[yc==0],axis=0)/np.min(dc[yc==1],axis=0)
+```
+
+```{python}
+si = np.argsort(scores)
+scs = scores[si]
+ycs = augY[si]
+```
+
+```{python}
+ir.fit(scs,ycs)
+```
+
+```{python}
+f,ax = plt.subplots()
+ax.plot(scs,ir.transform(scs),"-o")
+ax.plot(scores,augY,"o")
+```
+
+```{python}
+p0 = ir.transform([scores[-1]])[0]
+p0
+```
+
+Let's now package this up as a function
+
+```{python}
+def VennABERS(X,y,xt):
+    return (VennABERS_(X,y,xt,0),VennABERS_(X,y,xt,1))
+
+def VennABERS_(X,y,xt,yt):
+    augX = np.r_[X,xt]
+    augY = np.r_[y,yt]
+    
+    augDist = euclidean_distances(augX,augX)
+
+    
+    scores = np.empty_like(augY,dtype=float)
+    for i in range(augDist.shape[0]):
+        dc = np.delete(augDist[i],i)
+        yc = np.delete(augY,i)
+
+        scores[i] = np.min(dc[yc==0],axis=0)/np.min(dc[yc==1],axis=0)   
+    si = np.argsort(scores)
+    scs = scores[si]
+    ycs = augY[si]
+
+    ir = IsotonicRegression(y_min=0,y_max=1)    
+    ir.fit(scs,ycs)
+    
+    return ir.transform([scores[-1]])[0]
+```
+
+```{python}
+VennABERS(X,y,np.array([[0,0]],ndmin=2))
+```
+
+```{python}
+VennABERS(X,y,np.array([[1,1]],ndmin=2))
+```
+
+```{python}
+VennABERS(X,y,np.array([[-1,1]],ndmin=2))
+```
+
+```{python}
+def VennABERSPreds(X,y,res=40):
+    xPoints = res
+    yPoints = res
+    xx = np.linspace(-2, 2, xPoints)
+    yy = np.linspace(-2, 2, yPoints)
+    xx, yy = np.meshgrid(xx, yy)
+    
+    gridPoints = np.hstack((np.ravel(xx)[:, np.newaxis],
+                       np.ravel(yy)[:, np.newaxis]))
+    
+    preds = np.empty(shape=gridPoints.shape[0])
+    probsLo = np.empty(shape=gridPoints.shape[0])
+    probsHi = np.empty(shape=gridPoints.shape[0])
+    for i,pt in enumerate(gridPoints):
+        probsLo[i],probsHi[i] = VennABERS(X,y,np.array(pt,ndmin=2))
+        if (i%100)==0:
+            print(i,flush=True)
+    return probsLo.reshape(xx.shape),probsHi.reshape(xx.shape)
+```
+
+```{python}
+p0s,p1s = VennABERSPreds(X,y,res=100)
+```
+
+```{python}
+from matplotlib.ticker import MaxNLocator
+res = 100
+xPoints = res
+yPoints = res
+xx = np.linspace(-2, 2, xPoints)
+yy = np.linspace(-2, 2, yPoints)
+xx, yy = np.meshgrid(xx, yy)
+f,ax = plt.subplots(1,2)
+
+ax[0].pcolormesh(xx,yy,p0s,vmin=0,vmax=1)
+ax[0].set_aspect('equal')
+ax[0].grid()
+ax[0].set_title("$p_0$")
+
+pc = ax[1].pcolormesh(xx,yy,p1s,vmin=0,vmax=1)
+ax[1].set_aspect('equal')
+ax[1].grid()
+ax[1].set_title("$p_1$")
+
+f.colorbar(pc, ax=[ax[0],ax[1]])
+f.suptitle("Venn-ABERS")
+plt.show()
+
+```
+
+```{python}
+
+```
+
+```{python}
+nTest = 2000
+shuf = np.random.choice(range(nTest),nTest, replace=False)
+Xtest,ytest = make_blobs(n_samples=nTest, centers=n_centres, random_state=1,cluster_std=0.3)  # different random state
+Xtest,ytest = Xtest[shuf],ytest[shuf]   # shuffle the test examples
+ytest = np.where((ytest==3)|(ytest==0),0, 1)
+```
+
+```{python}
+p_0 = []
+p_1 = []
+for xt,yt in zip(Xtest,ytest):
+    p0,p1 = VennABERS(X,y,np.array(xt,ndmin=2))
+    p_0.append(1-p0)
+    p_1.append(p1)
+    if len(p_0)%100==1:
+        print(len(p_0),flush=True)
+```
+
+```{python}
+f,ax = plt.subplots()
+ax.plot(np.cumsum(p_0),label="cumul P({0})")
+ax.plot(np.cumsum(p_1),label="cumul P({1})")
+ax.plot(np.cumsum(ytest),"--",label="cumul y==1")
+ax.plot(np.cumsum(ytest==0),"--",label="cumul y==0")
+ax.grid()
+ax.legend(loc=2) # upper left
+ax.set_title("Performance of 1NN Venn-ABERS on test data")
+ax.set_xlabel("Number of test examples")
+ax.set_ylabel("Cumulative errors, cumulative probs")
+f.set_size_inches((8,6))
+f.savefig(r"perf_2000.PNG",dpi=300)
+```
+
+```{python}
+f,ax = plt.subplots()
+p_1 = np.array(p_1)
+p_0 = np.array(p_0)
+ax.plot(np.cumsum(p_1/(p_1+p_0)),label="cumul norm P")
+ax.plot(np.cumsum(ytest),"--",label="cumul y==1")
+ax.grid()
+ax.legend(loc=2) # upper left
+ax.set_title("Performance of 1NN Venn-ABERS on test data")
+ax.set_xlabel("Number of test examples")
+ax.set_ylabel("Cumulative errors, cumulative probs")
+f.set_size_inches((8,6))
+f.savefig(r"perf_2000p.PNG",dpi=300)
+```
+
+```{python}
+f,ax = plt.subplots()
+p_1 = np.array(p_1)
+p_0 = np.array(p_0)
+p = p_1/(p_1+p_0)
+ax.plot(np.cumsum(p)-np.cumsum(ytest),label="cumul $p$ - cumul $y$")
+# ax.plot(np.cumsum(1-p)-np.cumsum(1-ytest),label="Diff cumul $1-p$ - cumul $y$")
+ax.grid()
+ax.legend(loc=2) # upper left
+ax.set_title("Performance of 1NN Venn-ABERS on test data")
+ax.set_xlabel("Number of test examples")
+ax.set_ylabel("Cumulative errors, cumulative probs")
+f.set_size_inches((8,6))
+f.savefig(r"perf_2000p-diff.PNG",dpi=300)
+```
+
+```{python}
+
+```

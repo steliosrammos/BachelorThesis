@@ -7,10 +7,12 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import roc_auc_score, average_precision_score, precision_score, accuracy_score, brier_score_loss, confusion_matrix
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
 
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
 
 class ConformalBiasCorrection:
 
-    def __init__(self, train_data, test_data, classifiers, clf_parameters, rebalancing_parameters, bias_correction_parameters, verbose):
+    def __init__(self, train_data, test_data, classifiers, clf_parameters, rebalancing_parameters, bias_correction_parameters, verbose=0, random_state=None):
 
         self.train_data = train_data
         self.test_data = test_data
@@ -23,6 +25,7 @@ class ConformalBiasCorrection:
         self.rebalancing_parameters = rebalancing_parameters
         self.bias_correction_parameters = bias_correction_parameters
         self.verbose = verbose
+        self.random_state = random_state
 
     def compute_correction_weights(self):
 
@@ -32,15 +35,16 @@ class ConformalBiasCorrection:
         data_s = self.train_data.drop(['uuid', 'finished_treatment'], axis=1)
 
         # Shuffle rows
-        data_s = data_s.sample(frac=1, random_state=10)
+        data_s = data_s.sample(frac=1, random_state=self.random_state)
         X = data_s.iloc[:, :-2]
+        X= X.fillna(X.mean())
+
         y = data_s.iloc[:, -1]
 
         # Startified k-fold
-        sss = StratifiedKFold(n_splits=10, random_state=55)
+        sss = StratifiedKFold(n_splits=10, random_state=self.random_state)
 
         if type(y) == np.ndarray:
-
             prob_s_pos = np.bincount(y)[1] / len(y)
         else:
             prob_s_pos = y.value_counts(True)[1]
@@ -64,7 +68,7 @@ class ConformalBiasCorrection:
             classifier_s = self.classifiers['classifier_s']
             parameters = self.clf_parameters['classifier_s']
 
-            best_estimator, roc_auc, pr_auc, brier_loss = self.get_best_estimator(classifier_s, parameters, X_train, X_valid, y_train, y_valid, grid_search=False, verbose=False)
+            best_estimator, roc_auc, pr_auc, brier_loss = self.get_best_estimator(classifier_s, parameters, X_train, X_valid, y_train, y_valid, grid_search=False)
 
             # Compute weights for test examples
             predicted_prob_s.loc[X_valid.index] = best_estimator.predict_proba(X_valid)[:, 1]
@@ -90,7 +94,55 @@ class ConformalBiasCorrection:
             print('Average PR AUC: ', np.array(pr_aucs).mean())
             print('Average Brier Loss: {} \n'.format(np.array(brier_losses).mean()))
 
+        # Initialize augmented data with weights (in case the self-learning is not applied)
+        data_y = self.train_data.drop(['uuid', 'got_go'], axis=1)
+        data_lbld = data_y[~data_y.finished_treatment.isna()]
+        self.augmented_data_lbld = data_lbld
+
         return np.array(roc_aucs).mean(), np.array(brier_losses).mean()
+
+    # Classical semi-supervised learning
+    def classic_correct(self):
+
+        data_y = self.train_data.drop(['uuid', 'got_go'], axis=1)
+
+        # Split data into labeled and unlabeled sets
+        data_lbld = data_y[~data_y.finished_treatment.isna()]
+
+        data_unlbld = data_y[data_y.finished_treatment.isna()]
+        total_unlbld = data_unlbld.shape[0]
+
+        predictions = self.classic_predict(data_lbld, data_unlbld)
+
+        data_unlbld.finished_treatment = predictions
+
+        self.augmented_data_lbld = data_lbld.append(data_unlbld)
+        self.augmented_data_lbld
+
+    def classic_predict(self, data_lbld, data_unlbld):
+        # Create SMOTE instance for class rebalancing
+        smote = SMOTE(random_state=self.random_state)
+
+        # Create instance of classifier
+        classifier_y = self.classifiers['classifier_y']
+        parameters_y = self.clf_parameters['classifier_y']
+
+        clf = classifier_y.set_params(**parameters_y)
+
+        X = data_lbld.iloc[:, :-2]
+        y = data_lbld.iloc[:, -1]
+
+        X_unlbld = data_unlbld.iloc[:, :-2]
+
+        if self.rebalancing_parameters['SMOTE_y']:
+            X, y = smote.fit_resample(X, y)
+            clf.fit(X[:, :-1], y, sample_weight=X[:, -1])
+        else:
+            clf.fit(X.iloc[:, :-1], y, sample_weight=X.iloc[:, -1])
+
+        predictions = clf.predict(X_unlbld.iloc[:, :-1])
+
+        return predictions
 
     # CROSS-VALIDATED CONFORMAL PREDICTIONS
     def ccp_correct(self):
@@ -173,8 +225,6 @@ class ConformalBiasCorrection:
                 ratio = new_ratio
 
                 if self.verbose >= 2:
-                    # print("Improved! \n")
-                    # print("Updated ROC AUC: {} \n".format(avrg_roc_auc))
                     print("Updated ratio: {} \n".format(ratio))
                     print("Remaining unlabeled: {}".format(data_unlbld.shape[0]))
 
@@ -182,20 +232,15 @@ class ConformalBiasCorrection:
 
                 if self.verbose >= 2:
                     print("Did not improve...")
-                    # print("ROC AUC: {} \n".format(avrg_roc_auc))
-
-                # if self.verbose >= 1:
-                    # print("Final ROC AUC {}".format(best_avrg_roc_auc))
 
                 stop = True
 
         self.augmented_data_lbld = data_lbld.append(new_lbld.loc[last_newly_labeled_indeces])
-        self.augmented_data_lbld
 
     def ccp_predict(self, data_lbld, data_unlbld, new_lbld):
 
         # Create SMOTE instance for class rebalancing
-        smote = SMOTE(random_state=55)
+        smote = SMOTE(random_state=self.random_state)
 
         # Create instance of classifier
         classifier_y = self.classifiers['classifier_y']
@@ -214,7 +259,7 @@ class ConformalBiasCorrection:
 
         X_unlbld = data_unlbld.iloc[:, :-2]
 
-        sss = StratifiedKFold(n_splits=5, random_state=55)
+        sss = StratifiedKFold(n_splits=5, random_state = self.random_state)
         sss.get_n_splits(X, y)
 
         p_values = []
@@ -225,16 +270,9 @@ class ConformalBiasCorrection:
 
             if self.rebalancing_parameters['SMOTE_y']:
                 X_train, y_train = smote.fit_resample(X_train, y_train)
-
-                if self.bias_correction_parameters['correct_bias']:
-                    clf.fit(X_train[:, :-1], y_train, sample_weight=X_train[:, -1])
-                else:
-                    clf.fit(X_train[:, :-1], y_train)
+                clf.fit(X_train[:, :-1], y_train, sample_weight=X_train[:, -1])
             else:
-                if self.bias_correction_parameters['correct_bias']:
-                    clf.fit(X_train.iloc[:, :-1], y_train, sample_weight=X_train.iloc[:, -1])
-                else:
-                    clf.fit(X_train.iloc[:, :-1], y_train)
+                clf.fit(X_train.iloc[:, :-1], y_train, sample_weight=X_train.iloc[:, -1])
 
             nc = NcFactory.create_nc(clf, MarginErrFunc())
             icp = IcpClassifier(nc)
@@ -258,18 +296,26 @@ class ConformalBiasCorrection:
 
         return ccp_predictions
 
-    def get_best_estimator(self, classifiers_s, parameters, X_train, X_valid, y_train, y_valid, grid_search=False, verbose=False):
+    def get_best_estimator(self, classifiers_s, parameters, X_train, X_valid, y_train, y_valid, grid_search=False):
 
         if grid_search:
-            skf_5 = StratifiedKFold(5, random_state=55)
+            skf_5 = StratifiedKFold(5, random_state=self.random_state)
             estimator = GridSearchCV(classifiers_s, param_grid=parameters, cv=skf_5, scoring="roc_auc", verbose=0)
 
         else:
             estimator = classifiers_s.set_params(**parameters)
 
-        if self.rebalancing_parameters['SMOTE_s']:
-            smote = SMOTE(0.9, random_state=55)
-            X_train, y_train = smote.fit_resample(X_train, y_train)
+        rebalancing = self.rebalancing_parameters['rebalancing_s']
+
+        if rebalancing is not None:
+            if rebalancing == 'SMOTE':
+                rebalance = SMOTE(0.9, random_state=self.random_state)
+            elif rebalancing == 'oversampling':
+                rebalance = RandomOverSampler()
+            elif rebalancing == 'undersampling':
+                rebalance = RandomUnderSampler()
+
+            X_train, y_train = rebalance.fit_resample(X_train, y_train)
 
         # Calibrate the classifier here
         calib_estimator = CalibratedClassifierCV(estimator, cv=5, method='isotonic')
@@ -390,17 +436,17 @@ class ConformalBiasCorrection:
         X_test = test_data.iloc[:, 1:-2]
         y_test = test_data.iloc[:, -1]
 
+        # Create instance of classifier
         counts = uncorrected_train_data.finished_treatment.value_counts()
         ratio = counts[0]/counts[1]
 
-        # Create instance of classifier
         parameters = self.clf_parameters['classifier_y']
         parameters['scale_pos_weight'] = ratio
 
         model = self.classifiers['classifier_y']
         model.set_params(**parameters)
 
-        skf_5 = StratifiedKFold(5, random_state=55)
+        skf_5 = StratifiedKFold(5, random_state=self.random_state)
         calibrated_model = CalibratedClassifierCV(model, cv=skf_5, method='isotonic')
 
         # Uncorrected model evaluation
@@ -413,16 +459,14 @@ class ConformalBiasCorrection:
         uncorrected_confusion_matrix = confusion_matrix(y_test.values, predicted_labels)
         uncorrected_accuracy_score = accuracy_score(y_test.values, predicted_labels)
 
-        print("Test ROC AUC (not corrected): {}".format(uncorrected_roc_auc))
-        print("Test Confusion matrix (not corrected): \n {} \n".format(uncorrected_confusion_matrix))
-        print("Test accuracy (not corrected): \n {} \n".format(uncorrected_accuracy_score))
+        if self.verbose >= 1:
+            print("Test ROC AUC (not corrected): {}".format(uncorrected_roc_auc))
+            print("Test Confusion matrix (not corrected): \n {} \n".format(uncorrected_confusion_matrix))
+            print("Test accuracy (not corrected): \n {} \n".format(uncorrected_accuracy_score))
 
         # Corrected model evaluation
-        if self.bias_correction_parameters['correct_bias']:
-            calibrated_model.fit(X_train_corrected.iloc[:, :-1], y_train_corrected, sample_weight=X_train_corrected.iloc[:, -1])
-        else:
-            calibrated_model.fit(X_train_corrected.iloc[:, :-1], y_train_corrected)
-            feature_importances = model.feature_importances_
+        calibrated_model.fit(X_train_corrected.iloc[:, :-1], y_train_corrected, sample_weight=X_train_corrected.iloc[:, -1])
+        # feature_importances = model.feature_importances_
 
         predicted_proba = calibrated_model.predict_proba(X_test.iloc[:, :-1])[:, 1]
         corrected_roc_auc = roc_auc_score(y_test.values, predicted_proba)
@@ -431,11 +475,12 @@ class ConformalBiasCorrection:
         corrected_accuracy_score = accuracy_score(y_test.values, predicted_labels)
         corrected_confusion_matrix = confusion_matrix(y_test.values, predicted_labels)
 
-        print("Test ROC AUC (corrected): {}".format(corrected_roc_auc))
-        print("Test Confusion matrix (corrected): \n {} \n".format(corrected_confusion_matrix))
-        print("Test accuracy (corrected): \n {} \n".format(corrected_accuracy_score))
+        if self.verbose >= 1:
+            print("Test ROC AUC (corrected): {}".format(corrected_roc_auc))
+            print("Test Confusion matrix (corrected): \n {} \n".format(corrected_confusion_matrix))
+            print("Test accuracy (corrected): \n {} \n".format(corrected_accuracy_score))
 
-        return uncorrected_roc_auc, corrected_roc_auc, feature_importances
+        return uncorrected_roc_auc, corrected_roc_auc #, feature_importances
 
 # def evaluate(self, data_lbld, new_lbld):
     #     '''
@@ -458,8 +503,8 @@ class ConformalBiasCorrection:
     #     # Initialize roc array
     #     roc_aucs = []
     #
-    #     skf_10 = StratifiedKFold(10, random_state=55)
-    #     skf_5 = StratifiedKFold(5, random_state=55)
+    #     skf_10 = StratifiedKFold(10, random_state = self.random_state)
+    #     skf_5 = StratifiedKFold(5, random_state = self.random_state)
     #
     #     # Split data into training and validating set
     #     for train_index, valid_index in skf_10.split(X, y):
