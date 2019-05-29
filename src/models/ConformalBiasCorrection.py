@@ -10,6 +10,8 @@ from sklearn.model_selection import StratifiedKFold, GridSearchCV
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 
+import matplotlib.pyplot as plt
+
 class ConformalBiasCorrection:
 
     def __init__(self, train_data, test_data, classifiers, clf_parameters, rebalancing_parameters, bias_correction_parameters, verbose=0, random_state=None):
@@ -100,6 +102,12 @@ class ConformalBiasCorrection:
         self.augmented_data_lbld = data_lbld
 
         return np.array(roc_aucs).mean(), np.array(brier_losses).mean()
+
+    def visualize_weights(self):
+
+        weights = self.augmented_data_lbld.weight
+        plt.hist(weights, bins=100)
+        plt.show()
 
     # Classical semi-supervised learning
     def classic_correct(self):

@@ -133,6 +133,8 @@ for i in range(0, num_runs):
             rocs_s.append(roc)
             briers_s.append(brier)
 
+        framework.visualize_weights()
+        exit()
         # Framework with CCP ##
         # framework.ccp_correct()
 
