@@ -1,0 +1,160 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.0'
+      jupytext_version: 1.0.0
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+# Experiments Ionosphere Dataset
+
+```{python}
+import pandas as pd
+import numpy as np
+from xgboost import XGBClassifier
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import roc_auc_score, average_precision_score, brier_score_loss
+from sklearn.model_selection import train_test_split
+```
+
+```{python}
+# Import data
+base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
+
+# Select dataset
+data = pd.read_csv(base_path+"data/external/ionosphere.csv", sep=",")
+
+# # Change class to integer
+map = {'g': 1, 'b': 0}
+data["class"] = data["class"].map(map)
+```
+
+```{python}
+data.head()
+```
+
+```{python}
+0.2*351
+```
+
+```{python}
+test_data = data.iloc[:70,:]
+train_data = data.iloc[70:,:]
+```
+
+```{python}
+test_data.to_csv(base_path+"data/external/test_ionosphere.csv", sep=";", index=False)
+train_data.to_csv(base_path+"data/external/train_ionosphere.csv", sep=";", index=False)
+```
+
+# Unbiased Model
+
+```{python}
+train_data = pd.read_csv(base_path+"data/external/train_ionosphere.csv", sep=";")
+test_data = pd.read_csv(base_path+"data/external/test_ionosphere.csv", sep=";")
+```
+
+```{python}
+classifier_s = XGBClassifier(random_state=1)
+```
+
+```{python}
+X_train, y_train = train_data.iloc[:, :-1], train_data.iloc[:, -1]
+X_test, y_test = test_data.iloc[:, :-1], test_data.iloc[:, -1]
+```
+
+```{python}
+sss = StratifiedKFold(n_splits=20)
+
+roc_scores = []
+pr_scores = []
+brier_scores = []
+
+classifier_s.fit(X_train, y_train)
+predicted_probas = classifier_s.predict_proba(X_test)[:, 1]
+predicted_labels = classifier_s.predict(X_test)
+
+roc_score = roc_auc_score(y_test, predicted_probas)
+pr_score = average_precision_score(y_test, predicted_labels)
+brier_score = brier_score_loss(y_test, predicted_labels)
+
+print("ROC: {0:9.4f} \n PR: {1:9.4f} \n Brier: {2:9.4f} \n".format(roc_score, pr_score, brier_score))
+```
+
+# Biased Model
+
+```{python}
+# Let's introduce a selection bias
+```
+
+```{python}
+biased_data = train_data.copy()
+
+got_go = pd.Series(np.ones(biased_data.shape[0]))
+biased_data.insert(biased_data.shape[1]-1,value=got_go, column="got_go")
+biased_data.head()
+```
+
+```{python}
+biased_data.loc[(biased_data.a34 == 0) | (biased_data.a09 < 0.5), 'got_go'] = 0
+biased_data.loc[(biased_data.a34 == 0) | (biased_data.a09 < 0.5), 'class'] = np.nan
+biased_data.loc[biased_data.a34 == 0, :].head()
+```
+
+```{python}
+labeled = biased_data[~biased_data["class"].isna()]
+unlabeled = biased_data[biased_data["class"].isna()]
+
+print(labeled.shape[0])
+print(unlabeled.shape[0])
+```
+
+```{python}
+labeled.head()
+```
+
+```{python}
+X_train = labeled.iloc[:, :-2]
+y_train = labeled.iloc[:, -1]
+
+roc_scores = []
+pr_scores = []
+brier_scores = []
+
+classifier_s.fit(X_train, y_train)
+predicted_probas = classifier_s.predict_proba(X_test)[:, 1]
+predicted_labels = classifier_s.predict(X_test)
+
+roc_score = roc_auc_score(y_test, predicted_probas)
+pr_score = average_precision_score(y_test, predicted_labels)
+brier_score = brier_score_loss(y_test, predicted_labels)
+
+print("ROC: {0:9.4f} \n PR: {1:9.4f} \n Brier: {2:9.4f} \n".format(roc_score, pr_score, brier_score))
+```
+
+```{python}
+biased_data.insert(train_data.shape[1] - 1, "weight", pd.Series())
+biased_data.weight = 1
+```
+
+```{python}
+biased_data.head()
+```
+
+```{python}
+biased_data.to_csv(base_path+"data/external/biased_train_ionosphere.csv", sep=";", index=False)
+```
+
+```{python}
+
+```
+
+```{python}
+
+```
