@@ -23,8 +23,8 @@ warnings.filterwarnings('ignore')
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
 
 # Select dataset
-train_data = pd.read_csv(base_path+"data/external/biased_train_diabetes.csv", sep=";")
-test_data = pd.read_csv(base_path+"data/external/test_diabetes.csv", sep=";")
+train_data = pd.read_csv(base_path+"data/external/biased_train_ionosphere.csv", sep=";")
+test_data = pd.read_csv(base_path+"data/external/test_ionosphere.csv", sep=";")
 
 counts = train_data.got_go.value_counts()
 ratio = counts[0]/counts[1]

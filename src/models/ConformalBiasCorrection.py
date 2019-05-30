@@ -81,7 +81,7 @@ class ConformalBiasCorrection:
         data = self.augmented_data_lbld
         weights = data.weight
 
-        plt.hist(weights)
+        plt.hist(weights, bins=100)
         plt.show()
 
     # Classical semi-supervised learning
