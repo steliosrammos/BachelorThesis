@@ -23,8 +23,8 @@ warnings.filterwarnings('ignore')
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
 
 # Select dataset
-train_data = pd.read_csv(base_path+"data/external/biased_train_ionosphere.csv", sep=";")
-test_data = pd.read_csv(base_path+"data/external/test_ionosphere.csv", sep=";")
+train_data = pd.read_csv(base_path+"data/external/biased_train_diabetes.csv", sep=";")
+test_data = pd.read_csv(base_path+"data/external/test_diabetes.csv", sep=";")
 
 counts = train_data.got_go.value_counts()
 ratio = counts[0]/counts[1]
@@ -73,29 +73,47 @@ corrected_rocs_y = []
 
 rocs_s = []
 briers_s = []
+num_runs = 1
 
-framework = ConformalBiasCorrection(train_data=train_data, test_data=test_data, classifiers=classifiers, clf_parameters=clf_parameters, rebalancing_parameters=rebalancing_parameters, bias_correction_parameters=bias_correction_parameters)
-framework.verbose = 2
-framework.random_state = 1
+uncorrected_rocs_y = []
+corrected_rocs_y = []
 
-if bias_correction_parameters['correct_bias']:
-    framework.compute_correction_weights()
+for i in range(0, num_runs):
+    # all_feature_importances = []
+    rocs_s = []
+    briers_s = []
 
-framework.visualize_weights()
-exit()
-# Framework with CCP ##
-# framework.ccp_correct()
+    framework = ConformalBiasCorrection(train_data=train_data, test_data=test_data, classifiers=classifiers, clf_parameters=clf_parameters, rebalancing_parameters=rebalancing_parameters, bias_correction_parameters=bias_correction_parameters)
+    framework.verbose = 0
+    framework.random_state = None
 
-## Framework with classic semi-supervised ##
-framework.classic_correct()
+    if bias_correction_parameters['correct_bias']:
+        framework.compute_correction_weights()
 
-uncorr_roc = framework.evaluate_uncorrected()
-corr_roc = framework.evaluate_corrected()
-uncorrected_rocs_y.append(uncorr_roc)
-corrected_rocs_y.append(corr_roc)
+    # framework.visualize_weights()
+
+    # # Framework with CCP ##
+    # framework.ccp_correct()
+
+    ## Framework with classic semi-supervised ##
+    # framework.classic_correct()
+
+    uncorr_roc = framework.evaluate_uncorrected()
+    corr_roc = framework.evaluate_corrected()
+    uncorrected_rocs_y.append(uncorr_roc)
+    corrected_rocs_y.append(corr_roc)
 
 print("Final mean test ROC AUC (uncorrected): {}".format(np.array(uncorrected_rocs_y).mean()))
 print("Final mean test ROC AUC (corrected): {}".format(np.array(corrected_rocs_y).mean()))
 
-print("Final mean S ROC : {}".format(np.array(rocs_s).mean()))
-print("Final mean S brier: {}".format(np.array(briers_s).mean()))
+# print("Final mean S ROC : {}".format(np.array(rocs_s).mean()))
+# print("Final mean S brier: {}".format(np.array(briers_s).mean()))
+
+t_score, p_value = stats.ttest_ind(uncorrected_rocs_y, corrected_rocs_y, equal_var=False)
+print("Mean uncorrected ROC: {}".format(np.array(uncorrected_rocs_y).mean()))
+print("Mean corrected ROC: {}".format(np.array(corrected_rocs_y).mean()))
+print("T-score: {} ".format(t_score))
+print("P-value: {} \n".format(p_value))
+#
+# print(uncorrected_roc)
+# print(corrected_roc)

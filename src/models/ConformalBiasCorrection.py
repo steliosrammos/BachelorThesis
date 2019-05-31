@@ -53,8 +53,15 @@ class ConformalBiasCorrection:
 
         fold_num = 0
 
+        roc_aucs = []
+        brier_losses = []
+
         for train_index, valid_index in sss.split(X, y):
 
+            roc_score, brier_loss = self.evaluate_classifier_s(data_s.iloc[train_index])
+            roc_aucs.append(roc_score)
+            brier_losses.append(brier_loss)
+            # exit()
             X_train, X_valid = X.iloc[train_index], X.iloc[valid_index]
             y_train, y_valid = y.iloc[train_index], y.iloc[valid_index]
 
@@ -75,7 +82,41 @@ class ConformalBiasCorrection:
             data_lbld = data_y[~data_y["class"].isna()]
             self.augmented_data_lbld = data_lbld
 
+        print("Classifier S")
+        print("ROC AUC: {}".format(np.array(roc_aucs).mean()))
+        print("ROC AUC: {}".format(np.array(brier_losses).mean()))
+
         return True
+
+    def evaluate_classifier_s(self, data):
+
+        sss = StratifiedKFold(n_splits=10, random_state=1)
+
+        X = data.iloc[:, :-2]
+        y = data.iloc[:, -1]
+
+        roc_aucs = []
+        brier_losses = []
+
+        for train_index, valid_index in sss.split(X, y):
+
+            X_train, X_test = X.iloc[train_index], X.iloc[valid_index]
+            y_train, y_test = y.iloc[train_index], y.iloc[valid_index]
+
+            clf_s = self.classifiers["classifier_s"]
+            clf_s.fit(X_train, y_train)
+
+            predicted_prob = clf_s.predict_proba(X_test)[:, 1]
+            roc_auc = roc_auc_score(y_test.values, predicted_prob)
+            brier_loss = brier_score_loss(y_test.values, predicted_prob)
+
+            roc_aucs.append(roc_auc)
+            brier_losses.append(brier_loss)
+
+        roc_aucs = np.array(roc_aucs).mean()
+        brier_losses = np.array(brier_losses).mean()
+        return roc_aucs, brier_losses
+
 
     def visualize_weights(self):
         data = self.augmented_data_lbld
@@ -167,7 +208,7 @@ class ConformalBiasCorrection:
             ccp_predictions = self.ccp_predict(data_lbld, data_unlbld, new_lbld.loc[all_newly_labeled_indeces])
 
             # Add best predictions
-            labels = self.get_best_pred_indeces(ccp_predictions, 0.6, ratio)
+            labels = self.get_best_pred_indeces(ccp_predictions, 0.9, ratio)
             new_lbld.loc[labels.index.values, 'class'] = labels.values
 
             # Save new label's indeces

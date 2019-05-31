@@ -106,8 +106,8 @@ biased_data.head()
 ```
 
 ```{python}
-biased_data.loc[(biased_data.age < 25), 'got_go'] = 0
-biased_data.loc[(biased_data.age <25), 'class'] = np.nan
+biased_data.loc[(biased_data.age < 25) | (biased_data.pedi > 1) | (biased_data.skin == 0), 'got_go'] = 0
+biased_data.loc[(biased_data.age < 25) | (biased_data.pedi > 1) | (biased_data.skin == 0), 'class'] = np.nan
 ```
 
 ```{python}
