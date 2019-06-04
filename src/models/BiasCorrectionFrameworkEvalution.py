@@ -23,8 +23,8 @@ warnings.filterwarnings('ignore')
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
 
 # Select dataset
-train_data = pd.read_csv(base_path+"data/external/biased_train_diabetes.csv", sep=";")
-test_data = pd.read_csv(base_path+"data/external/test_diabetes.csv", sep=";")
+train_data = pd.read_csv(base_path+"data/external/biased_train_ionosphere.csv", sep=";")
+test_data = pd.read_csv(base_path+"data/external/test_ionosphere.csv", sep=";")
 
 counts = train_data.got_go.value_counts()
 ratio = counts[0]/counts[1]
@@ -73,7 +73,7 @@ corrected_rocs_y = []
 
 rocs_s = []
 briers_s = []
-num_runs = 30
+num_runs = 5
 
 uncorrected_rocs_y = []
 corrected_rocs_y = []
@@ -84,7 +84,7 @@ for i in range(0, num_runs):
     briers_s = []
 
     framework = ConformalBiasCorrection(train_data=train_data, test_data=test_data, classifiers=classifiers, clf_parameters=clf_parameters, rebalancing_parameters=rebalancing_parameters, bias_correction_parameters=bias_correction_parameters)
-    framework.verbose = 1
+    framework.verbose = 2
     framework.random_state = None
 
     if bias_correction_parameters['correct_bias']:
