@@ -298,7 +298,7 @@ class ConformalBiasCorrection:
         mean_p_values = np.array(p_values).mean(axis=0)
         ccp_predictions = pd.DataFrame(mean_p_values, columns=['mean_p_0', 'mean_p_1'])
         ccp_predictions["credibility"] = [row.max() for _, row in ccp_predictions.iterrows()]
-        ccp_predictions["confidence"] = [1-row.min() for _, row in ccp_predictions.iterrows()] #ccp_predictions.apply(lambda x: 1 - x.max(axis=1), axis=1)
+        ccp_predictions["confidence"] = [1-row.min() for _, row in ccp_predictions.iterrows()]
         # ccp_predictions["criteria"] = ccp_predictions["credibility"]*ccp_predictions["confidence"]
         # ccp_predictions["criteria"] = ccp_predictions["confidence"]
         ccp_predictions.index = X_unlbld.index
@@ -375,10 +375,11 @@ class ConformalBiasCorrection:
         positives = predictions[predictions["labels"] == 1].sort_values("mean_p_1")
         negatives = predictions[predictions["labels"] == 0].sort_values("mean_p_0")
 
-        positives = positives[(positives["confidence"] >= threshold) & (positives["credibility"] <= threshold)]
-        negatives = negatives[(negatives["confidence"] >= threshold) & (positives["credibility"] <= threshold)]
+        positives = positives.loc[(positives["confidence"] >= threshold) & (positives["credibility"] <= threshold)]
+        negatives = negatives.loc[(negatives["confidence"] >= threshold) & (positives["credibility"] <= threshold)]
 
         current_ratio = (negatives.shape[0] + 1) / (positives.shape[0] + 1)
+        print("Current ratio: {} \n".format(current_ratio))
 
         if current_ratio < true_ratio:
             while current_ratio < true_ratio and positives.shape[0] > 1:

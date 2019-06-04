@@ -25,12 +25,12 @@ warnings.filterwarnings('ignore')
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
 
 # Select dataset
-data = pd.read_csv(base_path+"data/interim/data_extra_nogo_2018_v2.csv", sep=";")
+# data = pd.read_csv(base_path+"data/interim/data_extra_nogo_2018_v2.csv", sep=";")
 # print(data.info())
 # exit()
 
 # data = pd.read_csv(base_path + "data/interim/data_2018 (with bdi-csi).csv", sep=";")
-# data = pd.read_csv(base_path+'data/interim/data_extra_nogo_2018_with_missing.csv', sep=";")
+data = pd.read_csv(base_path+'data/interim/data_extra_nogo_2018_with_missing.csv', sep=";")
 
 # Add weight column with default 1
 data.insert(data.shape[1] - 2, "weight", pd.Series())
@@ -42,7 +42,7 @@ ratio = counts[0]/counts[1]
 ######### CLASSIFIER S #############
 # XGBoost
 classifier_s = XGBClassifier()
-parameters_s = {'n_jobs': -1, 'reg_lambda': 0.8, 'max_delta_step': 2, 'learing_rate': 0.3, 'max_depth': 6, 'n_estimators': 50, 'objective':'binary:logistic', 'random_state': 55}
+parameters_s = {'n_jobs': -1, 'reg_lambda': 0.8, 'max_delta_step': 2, 'learing_rate': 0.3, 'max_depth': 6, 'n_estimators': 50, 'objective': 'binary:logistic', 'random_state': 55}
 
 # Random Forest
 # classifier_s = RandomForestClassifier()
@@ -126,7 +126,7 @@ for i in range(0, num_runs):
 
         framework = ConformalBiasCorrection(train_data=data_train, test_data=data_test, classifiers=classifiers, clf_parameters=clf_parameters, rebalancing_parameters=rebalancing_parameters, bias_correction_parameters=bias_correction_parameters)
         framework.verbose = 2
-        framework.random_state = 55
+        framework.random_state = None
 
         if bias_correction_parameters['correct_bias']:
             roc, brier = framework.compute_correction_weights()
