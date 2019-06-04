@@ -152,33 +152,29 @@ class ConformalBiasCorrection:
 
         return predictions
 
-    # CROSS-VALIDATED CONFORMAL PREDICTIONS
+        # CROSS-VALIDATED CONFORMAL PREDICTIONS
+
     def ccp_correct(self):
 
         data_y = self.train_data.drop(['uuid', 'got_go'], axis=1)
 
         # Split data into labeled and unlabeled sets
-        data_lbld = data_y[~data_y.finished_treatment.isna()]
+        data_lbld = data_y[~data_y["finished_treatment"].isna()]
 
-        data_unlbld = data_y[data_y.finished_treatment.isna()]
+        data_unlbld = data_y[data_y["finished_treatment"].isna()]
         total_unlbld = data_unlbld.shape[0]
 
         # Compute positive to negative ratio
-        label_cnts = data_lbld.finished_treatment.value_counts()
-        ratio = label_cnts[0] / label_cnts[1]
-        over_sampling_factor = int(label_cnts[1] / label_cnts[0])
+        label_cnts = data_lbld["finished_treatment"].value_counts()
+        initial_ratio = label_cnts[0] / label_cnts[1]
+
+        if self.rebalancing_parameters['conformal_oversampling']:
+            over_sampling_factor = int(label_cnts[1] / label_cnts[0])
 
         # Initialize array of newly_labeled data
         new_lbld = data_unlbld.copy()
         all_newly_labeled_indeces = []
         last_newly_labeled_indeces = []
-
-        # Evaluate current model
-        # init_avrg_roc_auc = self.evaluate(data_lbld, new_lbld.loc[all_newly_labeled_indeces])
-
-        # Initialize average ROC AUC:
-        # best_avrg_roc_auc = init_avrg_roc_auc
-        # pr_aucs = []
 
         # Initialize stopping variable
         stop = False
@@ -186,12 +182,10 @@ class ConformalBiasCorrection:
         if self.verbose >= 2:
             print('Start conformal improvement.')
             print("Initial unlabeled: {} \n".format(data_unlbld.shape[0]))
-            print("Initial ratio: {} \n".format(ratio))
-
-        # if self.verbose >= 1:
-            # print("Initial ROC AUC: {}".format(init_avrg_roc_auc))
+            print("Initial ratio: {} \n".format(initial_ratio))
 
         iterations = 0
+        ratio = initial_ratio
 
         while not stop:
 
@@ -199,7 +193,7 @@ class ConformalBiasCorrection:
             ccp_predictions = self.ccp_predict(data_lbld, data_unlbld, new_lbld.loc[all_newly_labeled_indeces])
 
             # Add best predictions
-            labels = self.get_best_pred_indeces(ccp_predictions, 0.9, ratio)
+            labels = self.get_best_pred_indeces(ccp_predictions, 0.96, ratio)
             new_lbld.loc[labels.index.values, 'finished_treatment'] = labels.values
 
             # Save new label's indeces
@@ -207,7 +201,9 @@ class ConformalBiasCorrection:
 
             if self.rebalancing_parameters['conformal_oversampling']:
                 if ratio <= 0.5:
-                    oversampled_newly_lbld_indeces = self.oversample_minority(new_lbld, 'finished_treatment', 0, over_sampling_factor, newly_labeled_indeces)
+                    oversampled_newly_lbld_indeces = self.oversample_minority(new_lbld, 'finished_treatment', 0,
+                                                                              over_sampling_factor,
+                                                                              newly_labeled_indeces)
                     all_newly_labeled_indeces += oversampled_newly_lbld_indeces
             else:
                 all_newly_labeled_indeces += newly_labeled_indeces
@@ -215,31 +211,29 @@ class ConformalBiasCorrection:
             if self.verbose >= 2:
                 print('Number of good predictions: {} \n'.format(labels.shape[0]))
 
-            # Evaluate current model
-            # avrg_roc_auc = self.evaluate(data_lbld, new_lbld.loc[all_newly_labeled_indeces])
-
             remain_unlbld = data_unlbld.shape[0]
 
-            if data_unlbld.shape[0] > 0 and labels.shape[0] != 0 and ratio <= 0.5 and remain_unlbld > total_unlbld * 0.8:
+            ratio = self.calculate_ratio(data_lbld, new_lbld)
+
+            if data_unlbld.shape[0] > 0 and labels.shape[0] > 0 and remain_unlbld > total_unlbld * 0.8 and np.abs(
+                    initial_ratio - ratio) < 0.05 * initial_ratio:
                 iterations += 1
                 last_newly_labeled_indeces = all_newly_labeled_indeces
 
-                # Update average PR AUC
-                # best_avrg_roc_auc = avrg_roc_auc
                 data_unlbld = data_unlbld.drop(newly_labeled_indeces)
-
-                # Update ratio
-                new_ratio = self.calculate_ratio(data_lbld, new_lbld)
-                ratio = new_ratio
 
                 if self.verbose >= 2:
                     print("Updated ratio: {} \n".format(ratio))
                     print("Remaining unlabeled: {}".format(data_unlbld.shape[0]))
 
             else:
-
-                if self.verbose >= 2:
-                    print("Did not improve...")
+                if self.verbose >= 1:
+                    print("Condition 1 - Remaining unlabeled > 0: {}".format(data_unlbld.shape[0] > 0))
+                    print("Condition 2 - Number of good predictions > 0: {}".format(labels.shape[0] > 0))
+                    print("Condition 3 - Percentage labeled >= 20%: {}".format(remain_unlbld > total_unlbld * 0.8))
+                    print("Condition 4 - Class ration changed by less than 1%: {}".format(
+                        np.abs(initial_ratio - ratio) < 0.05 * initial_ratio))
+                    print("Stopping...")
 
                 stop = True
 
