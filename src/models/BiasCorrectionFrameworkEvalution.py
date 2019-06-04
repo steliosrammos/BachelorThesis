@@ -60,7 +60,7 @@ rebalancing_parameters = {
     'conformal_oversampling': False,
     'balance_new_labels': False}
 
-bias_correction_parameters = {'correct_bias': True}
+bias_correction_parameters = {'correct_bias': False}
 
 uncorrected_roc = []
 corrected_roc = []
@@ -73,7 +73,7 @@ corrected_rocs_y = []
 
 rocs_s = []
 briers_s = []
-num_runs = 1
+num_runs = 30
 
 uncorrected_rocs_y = []
 corrected_rocs_y = []
@@ -84,7 +84,7 @@ for i in range(0, num_runs):
     briers_s = []
 
     framework = ConformalBiasCorrection(train_data=train_data, test_data=test_data, classifiers=classifiers, clf_parameters=clf_parameters, rebalancing_parameters=rebalancing_parameters, bias_correction_parameters=bias_correction_parameters)
-    framework.verbose = 0
+    framework.verbose = 1
     framework.random_state = None
 
     if bias_correction_parameters['correct_bias']:
@@ -93,7 +93,7 @@ for i in range(0, num_runs):
     # framework.visualize_weights()
 
     # # Framework with CCP ##
-    # framework.ccp_correct()
+    framework.ccp_correct()
 
     ## Framework with classic semi-supervised ##
     # framework.classic_correct()

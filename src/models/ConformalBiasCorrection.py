@@ -117,7 +117,6 @@ class ConformalBiasCorrection:
         brier_losses = np.array(brier_losses).mean()
         return roc_aucs, brier_losses
 
-
     def visualize_weights(self):
         data = self.augmented_data_lbld
         weights = data.weight
@@ -182,7 +181,7 @@ class ConformalBiasCorrection:
 
         # Compute positive to negative ratio
         label_cnts = data_lbld["class"].value_counts()
-        ratio = label_cnts[0] / label_cnts[1]
+        initial_ratio = label_cnts[0] / label_cnts[1]
 
         if self.rebalancing_parameters['conformal_oversampling']:
             over_sampling_factor = int(label_cnts[1] / label_cnts[0])
@@ -198,9 +197,10 @@ class ConformalBiasCorrection:
         if self.verbose >= 2:
             print('Start conformal improvement.')
             print("Initial unlabeled: {} \n".format(data_unlbld.shape[0]))
-            print("Initial ratio: {} \n".format(ratio))
+            print("Initial ratio: {} \n".format(initial_ratio))
 
         iterations = 0
+        ratio = initial_ratio
 
         while not stop:
 
@@ -208,7 +208,7 @@ class ConformalBiasCorrection:
             ccp_predictions = self.ccp_predict(data_lbld, data_unlbld, new_lbld.loc[all_newly_labeled_indeces])
 
             # Add best predictions
-            labels = self.get_best_pred_indeces(ccp_predictions, 0.9, ratio)
+            labels = self.get_best_pred_indeces(ccp_predictions, 0.98, ratio)
             new_lbld.loc[labels.index.values, 'class'] = labels.values
 
             # Save new label's indeces
@@ -226,24 +226,21 @@ class ConformalBiasCorrection:
 
             remain_unlbld = data_unlbld.shape[0]
 
-            if data_unlbld.shape[0] > 0 and labels.shape[0] != 0 and remain_unlbld > total_unlbld * 0.8:
+            ratio = self.calculate_ratio(data_lbld, new_lbld)
+
+            if data_unlbld.shape[0] > 0 and labels.shape[0] != 0 and remain_unlbld > total_unlbld * 0.8 and np.abs(initial_ratio-ratio) < 0.01 * initial_ratio:
                 iterations += 1
                 last_newly_labeled_indeces = all_newly_labeled_indeces
 
                 data_unlbld = data_unlbld.drop(newly_labeled_indeces)
-
-                # Update ratio
-                new_ratio = self.calculate_ratio(data_lbld, new_lbld)
-                ratio = new_ratio
 
                 if self.verbose >= 2:
                     print("Updated ratio: {} \n".format(ratio))
                     print("Remaining unlabeled: {}".format(data_unlbld.shape[0]))
 
             else:
-
-                if self.verbose >= 2:
-                    print("Did not improve...")
+                print("Stopping...")
+                print("Remaining unlabeled: {}".format(data_unlbld.shape[0]))
 
                 stop = True
 
@@ -307,7 +304,7 @@ class ConformalBiasCorrection:
         ccp_predictions = pd.DataFrame(mean_p_values, columns=['mean_p_0', 'mean_p_1'])
         ccp_predictions["credibility"] = [row.max() for _, row in ccp_predictions.iterrows()]
         ccp_predictions["confidence"] = [1-row.min() for _, row in ccp_predictions.iterrows()] #ccp_predictions.apply(lambda x: 1 - x.max(axis=1), axis=1)
-        ccp_predictions["criteria"] = ccp_predictions["credibility"]*ccp_predictions["confidence"]
+        # ccp_predictions["criteria"] = ccp_predictions["credibility"]*ccp_predictions["confidence"]
         ccp_predictions.index = X_unlbld.index
 
         return ccp_predictions
@@ -356,15 +353,14 @@ class ConformalBiasCorrection:
 
     @staticmethod
     def calculate_ratio(data_lbld, new_lbld):
-        counts_data = data_lbld["class"].value_counts()
-        counts_new = new_lbld["class"].value_counts()
+        data_positives = data_lbld[data_lbld["class"] == 1].shape[0]
+        data_negatives = data_lbld[data_lbld["class"] == 0].shape[0]
 
-        negatives = counts_data[0]
-        positives = counts_data[1]
+        new_positives = new_lbld[new_lbld["class"] == 1].shape[0]
+        new_negatives = new_lbld[new_lbld["class"] == 0].shape[0]
 
-        if len(counts_new) == 2:
-            negatives = counts_data[0] + counts_new[0]
-            positives = counts_data[1] + counts_new[1]
+        positives = data_positives + new_positives
+        negatives = data_negatives + new_negatives
 
         ratio = negatives / positives
 
@@ -379,24 +375,23 @@ class ConformalBiasCorrection:
 
         predictions['labels'] = [np.argmax(row.values[0:2]) for _, row in predictions.iterrows()]
 
-        positives = predictions[predictions["labels"] == 1].sort_values("mean_p_1")
-        negatives = predictions[predictions["labels"] == 0].sort_values("mean_p_0")
+        positives = predictions[predictions["labels"] == 1].sort_values("confidence")
+        negatives = predictions[predictions["labels"] == 0].sort_values("confidence")
 
-        positives = positives[positives["criteria"] >= threshold]
-        negatives = negatives[negatives["criteria"] >= threshold]
+        positives = positives.loc[(positives["confidence"] >= threshold) & (positives["credibility"] <= threshold)]
+        negatives = negatives.loc[(negatives["confidence"] >= threshold) & (negatives["credibility"] <= threshold)]
 
         current_ratio = (negatives.shape[0] + 1) / (positives.shape[0] + 1)
 
-        if self.rebalancing_parameters['balance_new_labels'] == True:
-            if current_ratio < true_ratio:
-                while current_ratio < true_ratio and positives.shape[0] > 1:
-                    positives = positives[1:]
-                    current_ratio = (negatives.shape[0] + 1) / (positives.shape[0] + 1)
+        if current_ratio < true_ratio:
+            while current_ratio < true_ratio and positives.shape[0] > 1:
+                positives = positives[1:]
+                current_ratio = (negatives.shape[0] + 1) / (positives.shape[0] + 1)
 
-            elif current_ratio > true_ratio:
-                while current_ratio > true_ratio and negatives.shape[0] > 1:
-                    negatives = negatives[1:]
-                    current_ratio = (negatives.shape[0] + 1) / (positives.shape[0] + 1)
+        elif current_ratio > true_ratio:
+            while current_ratio > true_ratio and negatives.shape[0] > 1:
+                negatives = negatives[1:]
+                current_ratio = (negatives.shape[0] + 1) / (positives.shape[0] + 1)
 
         positives_indeces = list(positives.index.values)
         negatives_indeces = list(negatives.index.values)
