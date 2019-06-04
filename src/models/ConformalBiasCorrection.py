@@ -343,15 +343,14 @@ class ConformalBiasCorrection:
 
     @staticmethod
     def calculate_ratio(data_lbld, new_lbld):
-        counts_data = data_lbld.finished_treatment.value_counts()
-        counts_new = new_lbld.finished_treatment.value_counts()
+        data_positives = data_lbld[data_lbld["finished_treatment"] == 1].shape[0]
+        data_negatives = data_lbld[data_lbld["finished_treatment"] == 0].shape[0]
 
-        negatives = counts_data[0]
-        positives = counts_data[1]
+        new_positives = new_lbld[new_lbld["finished_treatment"] == 1].shape[0]
+        new_negatives = new_lbld[new_lbld["finished_treatment"] == 0].shape[0]
 
-        if len(counts_new) == 2:
-            negatives = counts_data[0] + counts_new[0]
-            positives = counts_data[1] + counts_new[1]
+        positives = data_positives + new_positives
+        negatives = data_negatives + new_negatives
 
         ratio = negatives / positives
 
