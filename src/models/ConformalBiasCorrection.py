@@ -134,14 +134,34 @@ class ConformalBiasCorrection:
 
         data_unlbld = data_y[data_y["class"].isna()]
         total_unlbld = data_unlbld.shape[0]
+        cnt_labeled = 0
 
-        predictions = self.classic_predict(data_lbld, data_unlbld)
+        stop = False
 
-        data_unlbld["class"] = predictions
+        while not stop:
+            threshold = 0.99
 
-        num_new_labels_to_select = int(data_unlbld.shape[0]*0.1)
-        self.augmented_data_lbld = data_lbld.append(data_unlbld.sample(num_new_labels_to_select))
-        self.augmented_data_lbld
+            data_unlbld = data_unlbld[data_unlbld["class"].isna()]
+            predictions = self.classic_predict(data_lbld, data_unlbld)
+
+            filtered_negatives = predictions[predictions["class_0"] > threshold]
+            filtered_positives = predictions[predictions["class_1"] > threshold]
+
+            negative_indeces = list(filtered_negatives.index.values)
+            positive_indeces = list(filtered_positives.index.values)
+
+            data_unlbld.loc[negative_indeces, "class"] = 0
+            data_unlbld.loc[positive_indeces, "class"] = 1
+
+            newly_labeled = data_unlbld[~data_unlbld["class"].isna()]
+
+            if (len(positive_indeces) == 0 and len(negative_indeces) == 0) or data_unlbld.shape[0] == 0 and cnt_labeled > total_unlbld * 0.8:
+                print("Total labeled: {} \n".format(cnt_labeled))
+                self.augmented_data_lbld = data_lbld
+                stop = True
+            else:
+                data_lbld = data_lbld.append(newly_labeled)
+                cnt_labeled += newly_labeled.shape[0]
 
     def classic_predict(self, data_lbld, data_unlbld):
         # Create SMOTE instance for class rebalancing
@@ -164,7 +184,9 @@ class ConformalBiasCorrection:
         else:
             clf.fit(X.iloc[:, :-1], y, sample_weight=X.iloc[:, -1])
 
-        predictions = clf.predict(X_unlbld.iloc[:, :-1])
+        predictions = clf.predict_proba(X_unlbld.iloc[:, :-1])
+        predictions = pd.DataFrame(predictions, columns=["class_0", "class_1"])
+        predictions.index = data_unlbld.index
 
         return predictions
 
