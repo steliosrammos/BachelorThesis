@@ -82,9 +82,9 @@ class ConformalBiasCorrection:
             data_lbld = data_y[~data_y["class"].isna()]
             self.augmented_data_lbld = data_lbld
 
-        print("Classifier S")
-        print("ROC AUC: {}".format(np.array(roc_aucs).mean()))
-        print("ROC AUC: {}".format(np.array(brier_losses).mean()))
+        # print("Classifier S")
+        # print("ROC AUC: {}".format(np.array(roc_aucs).mean()))
+        # print("Brier Loss: {}".format(np.array(brier_losses).mean()))
 
         return True
 
@@ -191,7 +191,7 @@ class ConformalBiasCorrection:
         return predictions
 
     # CROSS-VALIDATED CONFORMAL PREDICTIONS
-    def ccp_correct(self):
+    def ccp_correct(self, percent_labels):
 
         data_y = self.train_data.drop(['got_go'], axis=1)
 
@@ -223,6 +223,7 @@ class ConformalBiasCorrection:
 
         iterations = 0
         ratio = initial_ratio
+        remain_unlbld = None
 
         while not stop:
 
@@ -250,7 +251,7 @@ class ConformalBiasCorrection:
 
             ratio = self.calculate_ratio(data_lbld, new_lbld)
 
-            if data_unlbld.shape[0] > 0 and labels.shape[0] > 0 and remain_unlbld > total_unlbld * 0.8 and np.abs(initial_ratio-ratio) < 0.05 * initial_ratio:
+            if data_unlbld.shape[0] > 0 and labels.shape[0] > 0 and remain_unlbld > total_unlbld * (1-percent_labels) and np.abs(initial_ratio-ratio) < 0.05 * initial_ratio:
                 iterations += 1
                 last_newly_labeled_indeces = all_newly_labeled_indeces
 
@@ -262,16 +263,17 @@ class ConformalBiasCorrection:
 
             else:
                 if self.verbose >= 1:
-                    print("Condition 1 - Remaining unlabeled > 0: {}".format(data_unlbld.shape[0] > 0))
+                    print("Condition 1 - Remaining unlabeled > 0: {} with {} labeled".format(data_unlbld.shape[0] > 0, total_unlbld-remain_unlbld))
                     print("Condition 2 - Number of good predictions > 0: {}".format(labels.shape[0] > 0))
-                    print("Condition 3 - Percentage labeled >= 20%: {}".format(remain_unlbld > total_unlbld * 0.8))
-                    print("Condition 4 - Class ration changed by less than 1%: {}".format(np.abs(initial_ratio-ratio) < 0.05 * initial_ratio))
+                    print("Condition 3 - Percentage labeled >= {}: {}".format(percent_labels, remain_unlbld > total_unlbld * 0.8))
+                    # print("Condition 4 - Class ration changed by less than 1%: {}".format(np.abs(initial_ratio-ratio) < 0.05 * initial_ratio))
                     print("Stopping...")
-
 
                 stop = True
 
         self.augmented_data_lbld = data_lbld.append(new_lbld.loc[last_newly_labeled_indeces])
+
+        return total_unlbld-remain_unlbld
 
     def ccp_predict(self, data_lbld, data_unlbld, new_lbld):
 

@@ -60,7 +60,7 @@ rebalancing_parameters = {
     'conformal_oversampling': False,
     'balance_new_labels': False}
 
-bias_correction_parameters = {'correct_bias': False}
+bias_correction_parameters = {'correct_bias': True}
 
 uncorrected_roc = []
 corrected_roc = []
@@ -77,14 +77,14 @@ num_runs = 5
 
 uncorrected_rocs_y = []
 corrected_rocs_y = []
+all_labeled = []
 
 for i in range(0, num_runs):
     # all_feature_importances = []
     rocs_s = []
     briers_s = []
-
     framework = ConformalBiasCorrection(train_data=train_data, test_data=test_data, classifiers=classifiers, clf_parameters=clf_parameters, rebalancing_parameters=rebalancing_parameters, bias_correction_parameters=bias_correction_parameters)
-    framework.verbose = 2
+    framework.verbose = 1
     framework.random_state = None
 
     if bias_correction_parameters['correct_bias']:
@@ -93,10 +93,11 @@ for i in range(0, num_runs):
     # framework.visualize_weights()
 
     # # Framework with CCP ##
-    # framework.ccp_correct()
+    labeled = framework.ccp_correct(0.4)
+    all_labeled.append(labeled)
 
     ## Framework with classic semi-supervised ##
-    framework.classic_correct()
+    # framework.classic_correct()
 
     uncorr_roc = framework.evaluate_uncorrected()
     corr_roc = framework.evaluate_corrected()
@@ -105,6 +106,7 @@ for i in range(0, num_runs):
 
 print("Final mean test ROC AUC (uncorrected): {}".format(np.array(uncorrected_rocs_y).mean()))
 print("Final mean test ROC AUC (corrected): {}".format(np.array(corrected_rocs_y).mean()))
+print("Total labeled : {}".format(np.array(all_labeled).mean()))
 
 # print("Final mean S ROC : {}".format(np.array(rocs_s).mean()))
 # print("Final mean S brier: {}".format(np.array(briers_s).mean()))
