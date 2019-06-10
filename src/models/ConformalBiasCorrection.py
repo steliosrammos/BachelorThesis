@@ -21,6 +21,7 @@ class ConformalBiasCorrection:
 
         # Defined after self training
         self.augmented_data_lbld = None
+        self.augmented_train_data = None
 
         self.classifiers = classifiers
         self.clf_parameters = clf_parameters
@@ -96,8 +97,67 @@ class ConformalBiasCorrection:
         data_y = self.train_data.drop(['uuid', 'got_go'], axis=1)
         data_lbld = data_y[~data_y.finished_treatment.isna()]
         self.augmented_data_lbld = data_lbld
+        self.augmented_train_data = self.train_data
 
         return np.array(roc_aucs).mean(), np.array(brier_losses).mean()
+
+    def update_correction_weights(self):
+
+        if self.verbose >= 2:
+            print('Start computing weights W')
+
+        data_s = self.augmented_train_data.drop(['uuid', 'finished_treatment'], axis=1)
+
+        # Shuffle rows
+        data_s = data_s.sample(frac=1, random_state=self.random_state)
+        X = data_s.iloc[:, :-2]
+        X = X.fillna(X.mean())
+
+        y = data_s.iloc[:, -1]
+
+        # Startified k-fold
+        sss = StratifiedKFold(n_splits=10, random_state=self.random_state)
+
+        if type(y) == np.ndarray:
+            prob_s_pos = np.bincount(y)[1] / len(y)
+        else:
+            prob_s_pos = y.value_counts(True)[1]
+
+        roc_aucs, pr_aucs, brier_losses, best_estimators, splits = [], [], [], [], []
+        predicted_prob_s = pd.Series(np.full(y.shape[0], np.nan))
+        predicted_prob_s.index = y.index
+
+        fold_num = 0
+
+        for train_index, valid_index in sss.split(X, y):
+
+            X_train, X_valid = X.iloc[train_index], X.iloc[valid_index]
+            y_train, y_valid = y.iloc[train_index], y.iloc[valid_index]
+
+            # Fit, calibrate and evaluate the classifier
+            classifier_s = self.classifiers['classifier_s']
+            parameters = self.clf_parameters['classifier_s']
+
+            best_estimator, roc_auc, pr_auc, brier_loss = self.get_best_estimator(classifier_s, parameters, X_train,
+                                                                                  X_valid, y_train, y_valid,
+                                                                                  grid_search=False)
+
+            # Compute weights for test examples
+            predicted_prob_s.loc[X_valid.index] = best_estimator.predict_proba(X_valid)[:, 1]
+
+            for index in X_valid.index:
+                if predicted_prob_s.loc[index] > 0:
+                    self.train_data.loc[index, 'weight'] = prob_s_pos / predicted_prob_s.loc[index]
+                else:
+                    self.train_data.loc[index, 'weight'] = 0.001 / prob_s_pos
+            fold_num += 1
+
+        # Initialize augmented data with weights (in case the self-learning is not applied)
+        data_y = self.train_data.drop(['uuid', 'got_go'], axis=1)
+        data_lbld = data_y[~data_y.finished_treatment.isna()]
+        self.augmented_data_lbld = data_lbld
+
+        return True
 
     def visualize_weights(self):
 
