@@ -185,8 +185,8 @@ class ConformalBiasCorrection:
 
         while not stop:
             # Compute weights
-            # if self.bias_correction_parameters['correct_bias']:
-            #     self.compute_correction_weights()
+            if self.bias_correction_parameters['correct_bias']:
+                _, _ = self.compute_correction_weights()
 
             # Make conformal predictions
             ccp_predictions = self.ccp_predict(data_lbld, data_unlbld, new_lbld.loc[all_newly_labeled_indeces])
@@ -370,7 +370,6 @@ class ConformalBiasCorrection:
         negatives = negatives.loc[(negatives["confidence"] >= threshold) & (positives["credibility"] <= threshold)]
 
         current_ratio = (negatives.shape[0] + 1) / (positives.shape[0] + 1)
-        print("Current ratio: {} \n".format(current_ratio))
 
         if current_ratio < true_ratio:
             while current_ratio < true_ratio and positives.shape[0] > 1:
@@ -462,8 +461,8 @@ class ConformalBiasCorrection:
 
         if self.verbose >= 1:
             print("Test ROC AUC (not corrected): {}".format(uncorrected_roc_auc))
-            print("Test Confusion matrix (not corrected): \n {} \n".format(uncorrected_confusion_matrix))
-            print("Test accuracy (not corrected): \n {} \n".format(uncorrected_accuracy_score))
+            # print("Test Confusion matrix (not corrected): \n {} \n".format(uncorrected_confusion_matrix))
+            # print("Test accuracy (not corrected): \n {} \n".format(uncorrected_accuracy_score))
 
         # Corrected model evaluation
         calibrated_model.fit(X_train_corrected.iloc[:, :-1], y_train_corrected, sample_weight=X_train_corrected.iloc[:, -1])
@@ -478,8 +477,8 @@ class ConformalBiasCorrection:
 
         if self.verbose >= 1:
             print("Test ROC AUC (corrected): {}".format(corrected_roc_auc))
-            print("Test Confusion matrix (corrected): \n {} \n".format(corrected_confusion_matrix))
-            print("Test accuracy (corrected): \n {} \n".format(corrected_accuracy_score))
+            # print("Test Confusion matrix (corrected): \n {} \n".format(corrected_confusion_matrix))
+            # print("Test accuracy (corrected): \n {} \n".format(corrected_accuracy_score))
 
         return uncorrected_roc_auc, corrected_roc_auc #, feature_importances
 

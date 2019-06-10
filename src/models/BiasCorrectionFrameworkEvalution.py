@@ -44,37 +44,10 @@ ratio = counts[0]/counts[1]
 classifier_s = XGBClassifier()
 parameters_s = {'n_jobs': -1, 'reg_lambda': 0.8, 'max_delta_step': 2, 'learing_rate': 0.3, 'max_depth': 6, 'n_estimators': 50, 'objective': 'binary:logistic', 'random_state': 55}
 
-# Random Forest
-# classifier_s = RandomForestClassifier()
-# # parameters_s = {'class_weight': 'balanced', 'n_estimators': 100, 'max_depth': 2, 'random_state': 55}
-# parameters_s = {'n_estimators': 100, 'max_depth': 2, 'random_state': 55}
-
-# SVC
-# classifier_s = SVC()
-# parameters_s = {'gamma': 'auto'}
-
-# Decision Tree
-# classifier_s = DecisionTreeClassifier()
-# parameters_s = {'random_state': 55}
-
 ######### CLASSIFIER y #############
 # XGBoost
 classifier_y = XGBClassifier()
 parameters_y = {'n_jobs': -1, 'learning_rate': 0.3, 'max_depth': 3, 'n_estimators': 10, 'scale_pos_weight': 0.5, 'objective':'binary:logistic', 'random_state': 55}
-
-# Random Forest
-# classifier_s = RandomForestClassifier()
-# # parameters_s = {'class_weight': 'balanced', 'n_estimators': 100, 'max_depth': 2, 'random_state': 55}
-# parameters_s = {'n_estimators': 100, 'max_depth': 2, 'random_state': 55}
-
-# SVC
-# classifier_s = SVC()
-# parameters_s = {'gamma': 'auto'}
-
-# Decision Tree
-# classifier_s = DecisionTreeClassifier()
-# parameters_s = {'random_state': 55}
-
 
 # Set classifiers and their parameters
 classifiers = {
@@ -125,11 +98,11 @@ for i in range(0, num_runs):
         data_test = data.loc[valid_index]
 
         framework = ConformalBiasCorrection(train_data=data_train, test_data=data_test, classifiers=classifiers, clf_parameters=clf_parameters, rebalancing_parameters=rebalancing_parameters, bias_correction_parameters=bias_correction_parameters)
-        framework.verbose = 2
+        framework.verbose = 1
         framework.random_state = None
 
-        if bias_correction_parameters['correct_bias']:
-            roc, brier = framework.compute_correction_weights()
+        # if bias_correction_parameters['correct_bias']:
+        #     roc, brier = framework.compute_correction_weights()
 
         # framework.visualize_weights()
         # exit()
