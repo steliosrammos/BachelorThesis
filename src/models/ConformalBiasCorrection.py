@@ -39,7 +39,7 @@ class ConformalBiasCorrection:
         # Shuffle rows
         data_s = data_s.sample(frac=1, random_state=self.random_state)
         X = data_s.iloc[:, :-2]
-        X= X.fillna(X.mean())
+        X = X.fillna(X.mean())
 
         y = data_s.iloc[:, -1]
 
@@ -51,11 +51,7 @@ class ConformalBiasCorrection:
         else:
             prob_s_pos = y.value_counts(True)[1]
 
-        roc_aucs = []
-        pr_aucs = []
-        brier_losses = []
-        best_estimators = []
-        splits = []
+        roc_aucs, pr_aucs, brier_losses, best_estimators, splits = [], [], [], [], []
         predicted_prob_s = pd.Series(np.full(y.shape[0], np.nan))
         predicted_prob_s.index = y.index
 
@@ -188,6 +184,9 @@ class ConformalBiasCorrection:
         ratio = initial_ratio
 
         while not stop:
+            # Compute weights
+            # if self.bias_correction_parameters['correct_bias']:
+            #     self.compute_correction_weights()
 
             # Make conformal predictions
             ccp_predictions = self.ccp_predict(data_lbld, data_unlbld, new_lbld.loc[all_newly_labeled_indeces])
@@ -293,8 +292,7 @@ class ConformalBiasCorrection:
         ccp_predictions = pd.DataFrame(mean_p_values, columns=['mean_p_0', 'mean_p_1'])
         ccp_predictions["credibility"] = [row.max() for _, row in ccp_predictions.iterrows()]
         ccp_predictions["confidence"] = [1-row.min() for _, row in ccp_predictions.iterrows()]
-        # ccp_predictions["criteria"] = ccp_predictions["credibility"]*ccp_predictions["confidence"]
-        # ccp_predictions["criteria"] = ccp_predictions["confidence"]
+
         ccp_predictions.index = X_unlbld.index
 
         return ccp_predictions

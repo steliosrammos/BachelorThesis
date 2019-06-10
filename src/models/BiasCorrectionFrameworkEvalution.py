@@ -97,7 +97,7 @@ rebalancing_parameters = {
     'conformal_oversampling': True,
     'feature_selection': True}
 
-bias_correction_parameters = {'correct_bias': False}
+bias_correction_parameters = {'correct_bias': True}
 
 uncorrected_roc = []
 corrected_roc = []
@@ -130,11 +130,10 @@ for i in range(0, num_runs):
 
         if bias_correction_parameters['correct_bias']:
             roc, brier = framework.compute_correction_weights()
-            rocs_s.append(roc)
-            briers_s.append(brier)
 
         # framework.visualize_weights()
         # exit()
+
         # Framework with CCP ##
         framework.ccp_correct()
 
@@ -144,7 +143,6 @@ for i in range(0, num_runs):
         uncorr_roc, corr_roc = framework.final_evaluation()
         uncorrected_rocs_y.append(uncorr_roc)
         corrected_rocs_y.append(corr_roc)
-        # all_feature_importances.append(feature_importances)
 
     uncorrected_roc.append(np.array(uncorrected_rocs_y).mean())
     corrected_roc.append(np.array(corrected_rocs_y).mean())
@@ -152,13 +150,8 @@ for i in range(0, num_runs):
     print("Final mean test ROC AUC (uncorrected): {}".format(np.array(uncorrected_rocs_y).mean()))
     print("Final mean test ROC AUC (corrected): {}".format(np.array(corrected_rocs_y).mean()))
 
-    print("Final mean S ROC : {}".format(np.array(rocs_s).mean()))
-    print("Final mean S brier: {}".format(np.array(briers_s).mean()))
-
-    # Visualize
-    # importance_ratios = np.array(all_feature_importances).mean(axis=0)
-    # visualize.important_features(importance_ratios)
-    # print(importance_ratios)
+    # print("Final mean S ROC : {}".format(np.array(rocs_s).mean()))
+    # print("Final mean S brier: {}".format(np.array(briers_s).mean()))
 
 # end = time.time()
 # total = end-start
