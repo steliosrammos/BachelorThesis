@@ -122,6 +122,7 @@ class ConformalBiasCorrection:
         weights = data.weight
 
         plt.hist(weights, bins=100)
+        plt.yscale('log')
         plt.show()
 
     # Classical semi-supervised learning

@@ -23,8 +23,8 @@ warnings.filterwarnings('ignore')
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
 
 # Select dataset
-train_data = pd.read_csv(base_path+"data/external/biased_train_diabetes.csv", sep=";")
-test_data = pd.read_csv(base_path+"data/external/test_diabetes.csv", sep=";")
+train_data = pd.read_csv(base_path+"data/external/biased_train_ionosphere.csv", sep=";")
+test_data = pd.read_csv(base_path+"data/external/test_ionosphere.csv", sep=";")
 
 counts = train_data.got_go.value_counts()
 ratio = counts[0]/counts[1]
@@ -73,7 +73,7 @@ corrected_rocs_y = []
 
 rocs_s = []
 briers_s = []
-num_runs = 5
+num_runs = 10
 
 uncorrected_rocs_y = []
 corrected_rocs_y = []
@@ -90,14 +90,14 @@ for i in range(0, num_runs):
     if bias_correction_parameters['correct_bias']:
         framework.compute_correction_weights()
 
-    # framework.visualize_weights()
-
+    framework.visualize_weights()
+    exit()
     # # Framework with CCP ##
-    labeled = framework.ccp_correct(0.4)
-    all_labeled.append(labeled)
+    # labeled = framework.ccp_correct(0.3)
+    # all_labeled.append(labeled)
 
     ## Framework with classic semi-supervised ##
-    # framework.classic_correct()
+    framework.classic_correct()
 
     uncorr_roc = framework.evaluate_uncorrected()
     corr_roc = framework.evaluate_corrected()
