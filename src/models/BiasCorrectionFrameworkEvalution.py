@@ -21,16 +21,19 @@ warnings.filterwarnings('ignore')
 
 # Import data
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
+data = pd.read_csv(base_path+"data/external/ionosphere.csv", sep=",")
 
-# Select dataset
-train_data = pd.read_csv(base_path+"data/external/biased_train_ionosphere.csv", sep=";")
-test_data = pd.read_csv(base_path+"data/external/test_ionosphere.csv", sep=";")
+# Change class to integer
+map = {'g': 1, 'b': 0}
+data['class'] = data['class'].map(map)
 
-counts = train_data.got_go.value_counts()
-ratio = counts[0]/counts[1]
+got_go = pd.Series(np.ones(data.shape[0]))
+data.insert(data.shape[1] - 1, value=got_go, column="got_go")
 
-X_train, y_train = train_data.iloc[:, :-1], train_data.iloc[:, -1]
-X_test, y_test = test_data.iloc[:, :-1], test_data.iloc[:, -1]
+data["weight"] = 1
+
+X = data.drop(['class', 'got_go', 'weight'], axis=1)
+y = data.loc[:, 'class']
 
 ######### CLASSIFIER S #############
 # XGBoost
@@ -58,64 +61,58 @@ rebalancing_parameters = {
     'rebalancing_s': None,
     'SMOTE_y': False,
     'conformal_oversampling': False,
-    'balance_new_labels': False}
+    'balance_new_labels': False
+}
 
 bias_correction_parameters = {'correct_bias': True}
-
-uncorrected_roc = []
-corrected_roc = []
-
-# Initialize some variables
-sss = StratifiedKFold(n_splits=10)
 
 uncorrected_rocs_y = []
 corrected_rocs_y = []
 
 rocs_s = []
 briers_s = []
-num_runs = 10
+num_runs = 1
 
-uncorrected_rocs_y = []
-corrected_rocs_y = []
 all_labeled = []
 
+skf = StratifiedKFold(100, random_state=None)
+
 for i in range(0, num_runs):
-    # all_feature_importances = []
-    rocs_s = []
-    briers_s = []
-    framework = ConformalBiasCorrection(train_data=train_data, test_data=test_data, classifiers=classifiers, clf_parameters=clf_parameters, rebalancing_parameters=rebalancing_parameters, bias_correction_parameters=bias_correction_parameters)
-    framework.verbose = 1
-    framework.random_state = None
 
-    if bias_correction_parameters['correct_bias']:
-        framework.compute_correction_weights()
+    for train_index, test_index in skf.split(X, y):
 
-    framework.visualize_weights()
-    exit()
-    # # Framework with CCP ##
-    # labeled = framework.ccp_correct(0.3)
-    # all_labeled.append(labeled)
+        train_data = data.iloc[train_index, :]
+        test_data = data.iloc[test_index, :]
 
-    ## Framework with classic semi-supervised ##
-    framework.classic_correct()
+        biased_train_data = train_data.copy()
+        biased_train_data.loc[(biased_train_data.a34 == 0) | (biased_train_data.a09 < 0.5), 'got_go'] = 0
+        biased_train_data.loc[(biased_train_data.a34 == 0) | (biased_train_data.a09 < 0.5), 'class'] = np.nan
 
-    uncorr_roc = framework.evaluate_uncorrected()
-    corr_roc = framework.evaluate_corrected()
-    uncorrected_rocs_y.append(uncorr_roc)
-    corrected_rocs_y.append(corr_roc)
+        framework = ConformalBiasCorrection(train_data=biased_train_data, test_data=test_data, classifiers=classifiers,
+                                            clf_parameters=clf_parameters,
+                                            rebalancing_parameters=rebalancing_parameters,
+                                            bias_correction_parameters=bias_correction_parameters)
+        framework.verbose = 1
+        framework.random_state = None
 
-print("Final mean test ROC AUC (uncorrected): {}".format(np.array(uncorrected_rocs_y).mean()))
-print("Final mean test ROC AUC (corrected): {}".format(np.array(corrected_rocs_y).mean()))
-print("Total labeled : {}".format(np.array(all_labeled).mean()))
+        if bias_correction_parameters['correct_bias']:
+            framework.compute_correction_weights()
 
-# print("Final mean S ROC : {}".format(np.array(rocs_s).mean()))
-# print("Final mean S brier: {}".format(np.array(briers_s).mean()))
+        # # Framework with CCP ##
+        # labeled = framework.ccp_correct(0.3)
+
+        ## Framework with classic semi-supervised ##
+        framework.classic_correct()
+
+        uncorr_roc = framework.evaluate_uncorrected()
+        corr_roc = framework.evaluate_corrected()
+
+        uncorrected_rocs_y.append(uncorr_roc)
+        corrected_rocs_y.append(corr_roc)
+        # all_labeled.append(labeled)
 
 t_score, p_value = stats.ttest_ind(uncorrected_rocs_y, corrected_rocs_y, equal_var=False)
 print("Mean uncorrected ROC: {}".format(np.array(uncorrected_rocs_y).mean()))
 print("Mean corrected ROC: {}".format(np.array(corrected_rocs_y).mean()))
 print("T-score: {} ".format(t_score))
 print("P-value: {} \n".format(p_value))
-#
-# print(uncorrected_roc)
-# print(corrected_roc)
