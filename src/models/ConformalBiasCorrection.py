@@ -135,7 +135,7 @@ class ConformalBiasCorrection:
         stop = False
 
         while not stop:
-            threshold = 0.95
+            threshold = 0.99
 
             data_unlbld = data_unlbld[data_unlbld["class"].isna()]
             predictions = self.classic_predict(data_lbld, data_unlbld)

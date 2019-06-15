@@ -21,14 +21,14 @@ warnings.filterwarnings('ignore')
 
 # Import data
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
-data = pd.read_csv(base_path+"data/external/ionosphere.csv", sep=",")
+data = pd.read_csv(base_path+"data/external/diabetes.csv", sep=",")
 
 # Change class to integer
-map = {'g': 1, 'b': 0}
-data['class'] = data['class'].map(map)
+map = {'tested_positive': 1, 'tested_negative': 0}
+data["class"] = data["class"].map(map)
 
 got_go = pd.Series(np.ones(data.shape[0]))
-data.insert(data.shape[1] - 1, value=got_go, column="got_go")
+data.insert(data.shape[1] - 1, value=got_go, column='got_go')
 
 data["weight"] = 1
 
@@ -85,8 +85,8 @@ for i in range(0, num_runs):
         test_data = data.iloc[test_index, :]
 
         biased_train_data = train_data.copy()
-        biased_train_data.loc[(biased_train_data.a34 == 0) | (biased_train_data.a09 < 0.5), 'got_go'] = 0
-        biased_train_data.loc[(biased_train_data.a34 == 0) | (biased_train_data.a09 < 0.5), 'class'] = np.nan
+        biased_train_data.loc[(biased_train_data.age < 25) | (biased_train_data.pedi > 1) | (biased_train_data.skin == 0), 'got_go'] = 0
+        biased_train_data.loc[(biased_train_data.age < 25) | (biased_train_data.pedi > 1) | (biased_train_data.skin == 0), 'class'] = np.nan
 
         framework = ConformalBiasCorrection(train_data=biased_train_data, test_data=test_data, classifiers=classifiers,
                                             clf_parameters=clf_parameters,
@@ -99,10 +99,10 @@ for i in range(0, num_runs):
             framework.compute_correction_weights()
 
         # # Framework with CCP ##
-        # labeled = framework.ccp_correct(0.3)
+        labeled = framework.ccp_correct(0.8)
 
         ## Framework with classic semi-supervised ##
-        framework.classic_correct()
+        # framework.classic_correct()
 
         uncorr_roc = framework.evaluate_uncorrected()
         corr_roc = framework.evaluate_corrected()
