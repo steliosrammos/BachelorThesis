@@ -83,34 +83,50 @@ class ConformalBiasCorrection:
 
         return True
 
-    # def evaluate_classifier_s(self, data):
-    #
-    #     sss = StratifiedKFold(n_splits=10)
-    #
-    #     X = data.iloc[:, :-2]
-    #     y = data.iloc[:, -1]
-    #
-    #     roc_aucs = []
-    #     brier_losses = []
-    #
-    #     for train_index, valid_index in sss.split(X, y):
-    #
-    #         X_train, X_test = X.iloc[train_index], X.iloc[valid_index]
-    #         y_train, y_test = y.iloc[train_index], y.iloc[valid_index]
-    #
-    #         clf_s = self.classifiers["classifier_s"]
-    #         clf_s.fit(X_train, y_train)
-    #
-    #         predicted_prob = clf_s.predict_proba(X_test)[:, 1]
-    #         roc_auc = roc_auc_score(y_test.values, predicted_prob)
-    #         brier_loss = brier_score_loss(y_test.values, predicted_prob)
-    #
-    #         roc_aucs.append(roc_auc)
-    #         brier_losses.append(brier_loss)
-    #
-    #     roc_aucs = np.array(roc_aucs).mean()
-    #     brier_losses = np.array(brier_losses).mean()
-    #     return roc_aucs, brier_losses
+    def update_correction_weights(self):
+        # print('Computing weights W...')
+
+        data_s = self.augmented_train_data.drop('class', axis=1)
+
+        # Shuffle rows
+        X = data_s.drop('got_go', axis=1)
+        y = data_s.loc[:, 'got_go']
+
+        # Startified k-fold
+        sss = StratifiedKFold(n_splits=10, random_state=1)
+
+        if type(y) == np.ndarray:
+            prob_s_pos = np.bincount(y)[1] / len(y)
+        else:
+            prob_s_pos = y.value_counts(True)[1]
+
+        predicted_prob_s = pd.Series(np.full(y.shape[0], np.nan))
+        predicted_prob_s.index = y.index
+
+        fold_num = 0
+
+        roc_aucs = []
+        brier_losses = []
+
+        for train_index, valid_index in sss.split(X, y):
+
+            X_train, X_valid = X.iloc[train_index], X.iloc[valid_index]
+            y_train, y_valid = y.iloc[train_index], y.iloc[valid_index]
+
+            # Compute weights for test examples
+            clf_s = self.classifiers["classifier_s"]
+            clf_s.fit(X_train, y_train)
+
+            predicted_prob_s.loc[X_valid.index] = clf_s.predict_proba(X_valid)[:, 1]
+
+            for index in X_valid.index:
+                if predicted_prob_s.loc[index] > 0:
+                    self.augmented_train_data.loc[index, 'weight'] = prob_s_pos / predicted_prob_s.loc[index]
+                else:
+                    self.augmented_train_data.loc[index, 'weight'] = 0.001 / prob_s_pos
+            fold_num += 1
+
+        return True
 
     def visualize_weights(self):
         data = self.augmented_data_lbld
