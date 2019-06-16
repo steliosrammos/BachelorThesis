@@ -46,7 +46,7 @@ class ConformalBiasCorrection:
         y = data_s.loc[:, 'got_go']
 
         # Startified k-fold
-        skf = StratifiedKFold(n_splits=10)
+        skf = StratifiedKFold(n_splits=10, random_state=self.random_state)
 
         # if type(y) == np.ndarray:
         #     prob_s_pos = np.bincount(y)[1] / len(y)
@@ -78,9 +78,9 @@ class ConformalBiasCorrection:
             fold_num += 1
 
         self.augmented_train_data = self.train_data
+
         data_y = self.train_data.drop('got_go', axis=1)
         data_lbld = data_y[~data_y['class'].isna()]
-
         self.augmented_data_lbld = data_lbld
 
         return True
@@ -95,7 +95,7 @@ class ConformalBiasCorrection:
         y = data_s.loc[:, 'got_go']
 
         # Startified k-fold
-        sss = StratifiedKFold(n_splits=10, random_state=1)
+        sss = StratifiedKFold(n_splits=10, random_state=self.random_state)
 
         if type(y) == np.ndarray:
             prob_s_pos = np.bincount(y)[1] / len(y)
@@ -136,7 +136,7 @@ class ConformalBiasCorrection:
         plt.show()
 
     # Classical semi-supervised learning
-    def classic_correct(self):
+    def classic_correct(self, percent_labeled):
 
         data_y = self.train_data.drop(['got_go'], axis=1)
 
@@ -174,7 +174,7 @@ class ConformalBiasCorrection:
                     negative_indeces = negative_indeces[1:]
                     current_ratio = (len(negative_indeces) + 1) / (len(positive_indeces) + 1)
 
-            print("Negative labels: {} \n Positive labels: {} \n".format(len(negative_indeces), len(positive_indeces)))
+            # print("Negative labels: {} \n Positive labels: {} \n".format(len(negative_indeces), len(positive_indeces)))
 
             data_unlbld.loc[negative_indeces, 'class'] = 0
             data_unlbld.loc[positive_indeces, 'class'] = 1
@@ -182,7 +182,7 @@ class ConformalBiasCorrection:
             newly_labeled = data_unlbld[~data_unlbld['class'].isna()]
             new_labeled += newly_labeled.shape[0]
 
-            if (len(positive_indeces) == 0 or len(negative_indeces) == 0) or data_unlbld.shape[0] == 0 or new_labeled > total_unlbld * 0.2:
+            if (len(positive_indeces) == 0 or len(negative_indeces) == 0) or data_unlbld.shape[0] == 0 or new_labeled > total_unlbld * percent_labeled:
                 print('Total labeled: {} \n'.format(cnt_labeled))
                 self.augmented_data_lbld = data_lbld
                 stop = True
@@ -213,188 +213,50 @@ class ConformalBiasCorrection:
 
         return predictions
 
-    # CROSS-VALIDATED CONFORMAL PREDICTIONS
-    # def ccp_correct(self, percent_labels):
-    #
-    #     data_y = self.train_data.drop(['got_go'], axis=1)
-    #
-    #     # Split data into labeled and unlabeled sets
-    #     data_lbld = data_y[~data_y['class'].isna()]
-    #
-    #     data_unlbld = data_y[data_y['class'].isna()]
-    #     total_unlbld = data_unlbld.shape[0]
-    #
-    #     # Compute positive to negative ratio
-    #     label_cnts = data_lbld['class'].value_counts()
-    #     initial_ratio = label_cnts[0] / label_cnts[1]
-    #
-    #     if self.rebalancing_parameters['conformal_oversampling']:
-    #         over_sampling_factor = int(label_cnts[1] / label_cnts[0])
-    #
-    #     # Initialize array of newly_labeled data
-    #     new_lbld = data_unlbld.copy()
-    #     all_newly_labeled_indeces = []
-    #     last_newly_labeled_indeces = []
-    #
-    #     # Initialize stopping variable
-    #     stop = False
-    #
-    #     if self.verbose >= 2:
-    #         print('Start conformal improvement.')
-    #         print('Initial unlabeled: {} \n'.format(data_unlbld.shape[0]))
-    #         print('Initial ratio: {} \n'.format(initial_ratio))
-    #
-    #     iterations = 0
-    #     ratio = initial_ratio
-    #     remain_unlbld = None
-    #
-    #     while not stop:
-    #
-    #         # Make conformal predictions
-    #         ccp_predictions = self.ccp_predict(data_lbld, data_unlbld, new_lbld.loc[all_newly_labeled_indeces])
-    #
-    #         # Add best predictions
-    #         labels = self.get_best_pred_indeces(ccp_predictions, 0.96, ratio)
-    #         new_lbld.loc[labels.index.values, 'class'] = labels.values
-    #
-    #         # Save new label's indeces
-    #         newly_labeled_indeces = list(labels.index.values)
-    #
-    #         if self.rebalancing_parameters['conformal_oversampling']:
-    #             if ratio <= 0.5:
-    #                 oversampled_newly_lbld_indeces = self.oversample_minority(new_lbld, 'class', 0, over_sampling_factor, newly_labeled_indeces)
-    #                 all_newly_labeled_indeces += oversampled_newly_lbld_indeces
-    #         else:
-    #             all_newly_labeled_indeces += newly_labeled_indeces
-    #
-    #         if self.verbose >= 2:
-    #             print('Number of good predictions: {} \n'.format(labels.shape[0]))
-    #
-    #         remain_unlbld = data_unlbld.shape[0]
-    #
-    #         ratio = self.calculate_ratio(data_lbld, new_lbld)
-    #
-    #         if data_unlbld.shape[0] > 0 and labels.shape[0] > 0 and remain_unlbld > total_unlbld * (1-percent_labels) and np.abs(initial_ratio-ratio) < 0.05 * initial_ratio:
-    #             iterations += 1
-    #             last_newly_labeled_indeces = all_newly_labeled_indeces
-    #
-    #             data_unlbld = data_unlbld.drop(newly_labeled_indeces)
-    #
-    #             if self.verbose >= 2:
-    #                 print('Updated ratio: {} \n'.format(ratio))
-    #                 print('Remaining unlabeled: {}'.format(data_unlbld.shape[0]))
-    #
-    #         else:
-    #             if self.verbose >= 1:
-    #                 print('Condition 1 - Remaining unlabeled > 0: {} with {} labeled'.format(data_unlbld.shape[0] > 0, total_unlbld-remain_unlbld))
-    #                 print('Condition 2 - Number of good predictions > 0: {}'.format(labels.shape[0] > 0))
-    #                 print('Condition 3 - Percentage labeled >= {}: {}'.format(percent_labels, remain_unlbld > total_unlbld * 0.8))
-    #                 # print('Condition 4 - Class ration changed by less than 1%: {}'.format(np.abs(initial_ratio-ratio) < 0.05 * initial_ratio))
-    #                 print('Stopping...')
-    #
-    #             stop = True
-    #
-    #     self.augmented_data_lbld = data_lbld.append(new_lbld.loc[last_newly_labeled_indeces])
-    #
-    #     return total_unlbld-remain_unlbld
-
-    def ccp_correct(self, percent_labels):
+    def ccp_correct(self, percent_labeled):
 
         # Initialize stopping variable
         stop = False
-
-        iterations = 0
         remain_unlbld = None
-        data_unlbld = None
-        data_lbld = None
+
+        data_y = self.augmented_train_data.drop(['got_go'], axis=1)
+
+        data_lbld = data_y[~data_y['class'].isna()]
+        data_unlbld = data_y[data_y['class'].isna()]
+
+        total_unlbld = data_unlbld.shape[0]
+        cnt_labeled = 0
+        new_labeled = 0
 
         while not stop:
 
-            if self.bias_correction_parameters['correct_bias']:
-                self.update_correction_weights()
-
-            data_y = self.augmented_train_data.drop(['got_go'], axis=1)
-
-            data_lbld = data_y[~data_y['class'].isna()]
-
-            if iterations == 0:
-                # Split data into labeled and unlabeled sets
-                data_unlbld = data_y[data_y['class'].isna()]
-                new_lbld = data_unlbld.copy()
-
-                # Initialize array of newly_labeled data
-                all_newly_labeled_indeces = []
-                last_newly_labeled_indeces = []
-
-                total_unlbld = data_unlbld.shape[0]
-
-                # Compute positive to negative ratio
-                label_cnts = data_lbld['class'].value_counts()
-                initial_ratio = label_cnts[0] / label_cnts[1]
-
-                ratio = initial_ratio
-
-            # Update the weights
-            new_lbld.weight = data_y[data_y['class'].isna()].weight
-
-            if self.rebalancing_parameters['conformal_oversampling']:
-                over_sampling_factor = int(label_cnts[1] / label_cnts[0])
-
             # Make conformal predictions
-            added_instances = new_lbld.loc[all_newly_labeled_indeces]
-            ccp_predictions = self.ccp_predict(data_lbld, data_unlbld, added_instances)
+            ccp_predictions = self.ccp_predict(data_lbld, data_unlbld)
 
-            # Add best predictions
-            labels = self.get_best_pred_indeces(ccp_predictions, 0.96, ratio)
-            new_lbld.loc[labels.index.values, 'class'] = labels.values
+            # Get best prediction indeces and values
+            labels = self.get_best_pred_indeces(ccp_predictions, 0.96)
 
-            # Save new label's indeces
-            newly_labeled_indeces = list(labels.index.values)
+            # Update counters
+            new_labeled += labels.shape[0]
+            remain_unlbld = data_unlbld.shape[0]-new_labeled
 
-            if self.rebalancing_parameters['conformal_oversampling']:
-                if ratio <= 0.5:
-                    oversampled_newly_lbld_indeces = self.oversample_minority(new_lbld, 'class', 0,
-                                                                              over_sampling_factor,
-                                                                              newly_labeled_indeces)
-                    all_newly_labeled_indeces += oversampled_newly_lbld_indeces
-            else:
-                all_newly_labeled_indeces += newly_labeled_indeces
-
-            if self.verbose >= 2:
-                print('Number of good predictions: {} \n'.format(labels.shape[0]))
-
-            remain_unlbld = data_unlbld.shape[0]
-
-            ratio = self.calculate_ratio(data_lbld, new_lbld)
-
-            if data_unlbld.shape[0] > 0 and labels.shape[0] > 0 and remain_unlbld > total_unlbld * (
-                    1 - percent_labels):
-                iterations += 1
-                last_newly_labeled_indeces = all_newly_labeled_indeces
-
-                self.augmented_train_data.loc[all_newly_labeled_indeces, 'got_go'] = 1
-                data_unlbld = data_unlbld.drop(newly_labeled_indeces)
-
-                if self.verbose >= 2:
-                    print('Updated ratio: {} \n'.format(ratio))
-                    print('Remaining unlabeled: {}'.format(data_unlbld.shape[0]))
-
-            else:
-                if self.verbose >= 1:
-                    print('Condition 1 - Remaining unlabeled > 0: {} with {} labeled'.format(data_unlbld.shape[0] > 0,
-                                                                                             total_unlbld - remain_unlbld))
-                    print('Condition 2 - Number of good predictions > 0: {}'.format(labels.shape[0] > 0))
-                    print('Condition 3 - Percentage labeled >= {}: {}'.format(percent_labels,
-                                                                              remain_unlbld > total_unlbld * 0.8))
-                    # print('Condition 4 - Class ration changed by less than 1%: {}'.format(np.abs(initial_ratio-ratio) < 0.05 * initial_ratio))
-                    print('Stopping...')
+            if remain_unlbld <= 0 or labels.shape[0] == 0 or new_labeled > total_unlbld * percent_labeled:
+                print('Total labeled: {} \n'.format(cnt_labeled))
+                self.augmented_data_lbld = data_lbld
                 stop = True
+            else:
+                # Add best instances to the labeled set
+                data_unlbld.loc[labels.index.values, 'class'] = labels.values
+                new = data_unlbld.loc[labels.index.values]
+                data_lbld = data_lbld.append(new)
 
-        self.augmented_data_lbld = data_lbld.append(new_lbld.loc[last_newly_labeled_indeces])
+                # Drop those instances from the unlabeled set
+                data_unlbld = data_unlbld.drop(labels.index.values)
 
-        return total_unlbld - remain_unlbld
+                # Update confirmed additions
+                cnt_labeled += labels.shape[0]
 
-    def ccp_predict(self, data_lbld, data_unlbld, new_lbld):
+    def ccp_predict(self, data_lbld, data_unlbld):
 
         # Create SMOTE instance for class rebalancing
         smote = SMOTE(random_state=self.random_state)
@@ -409,22 +271,13 @@ class ConformalBiasCorrection:
         y = data_lbld.loc[:, 'class']
         w = data_lbld.loc[:, 'weight']
 
-        X_new = data_lbld.drop(['class', 'weight'], axis=1)
-        y_new = data_lbld.loc[:, 'class']
-        w_new = data_lbld.loc[:, 'weight']
-
-        X = X.append(X_new, sort=False)
-        y = y.append(y_new)
-        w = w.append(w_new)
-
         X_unlbld = data_unlbld.drop(['class', 'weight'], axis=1)
 
-        sss = StratifiedKFold(n_splits=5, random_state=self.random_state)
-        sss.get_n_splits(X, y)
+        skf = StratifiedKFold(n_splits=5, random_state=self.random_state)
 
         p_values = []
 
-        for train_index, calib_index in sss.split(X, y):
+        for train_index, calib_index in skf.split(X, y):
 
             X_train, X_calib = X.iloc[train_index], X.iloc[calib_index]
             y_train, y_calib = y.iloc[train_index], y.iloc[calib_index]
@@ -472,7 +325,7 @@ class ConformalBiasCorrection:
 
         return ratio
 
-    def  get_best_pred_indeces(self, predictions, threshold, true_ratio):
+    def  get_best_pred_indeces(self, predictions, threshold):
         '''
             Returns the predictions that have a confidence level above a given threshold.
             The labels returned will have the same positive/negative ratio as the ratio specified by 'true_ratio'.
@@ -489,13 +342,13 @@ class ConformalBiasCorrection:
 
         current_ratio = (negatives.shape[0] + 1) / (positives.shape[0] + 1)
 
-        if current_ratio < true_ratio:
-            while current_ratio < true_ratio and positives.shape[0] > 1:
+        if current_ratio < self.class_ratio:
+            while current_ratio < self.class_ratio and positives.shape[0] > 1:
                 positives = positives[1:]
                 current_ratio = (negatives.shape[0] + 1) / (positives.shape[0] + 1)
 
-        elif current_ratio > true_ratio:
-            while current_ratio > true_ratio and negatives.shape[0] > 1:
+        elif current_ratio > self.class_ratio:
+            while current_ratio > self.class_ratio and negatives.shape[0] > 1:
                 negatives = negatives[1:]
                 current_ratio = (negatives.shape[0] + 1) / (positives.shape[0] + 1)
 
@@ -507,11 +360,12 @@ class ConformalBiasCorrection:
             print('Good negative predictions: {} \n'.format(len(negatives_indeces)))
 
         best_pred_indeces = positives_indeces + negatives_indeces
-        labels = predictions.loc[best_pred_indeces, 'labels']
 
         # Terminate if one of two is empty
         if len(positives_indeces) == 0 or len(negatives_indeces) == 0:
             best_pred_indeces = []
+
+        labels = predictions.loc[best_pred_indeces, 'labels']
 
         return labels
 
@@ -561,6 +415,7 @@ class ConformalBiasCorrection:
         predicted_proba = calibrated_model.predict_proba(X_test)[:, 1]
         uncorrected_roc_auc = roc_auc_score(y_test.values, predicted_proba)
 
+        print("Uncorrected ROC: ", uncorrected_roc_auc)
         return uncorrected_roc_auc
 
     def evaluate_corrected(self):

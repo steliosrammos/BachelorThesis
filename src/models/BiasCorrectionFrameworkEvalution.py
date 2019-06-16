@@ -64,7 +64,10 @@ rebalancing_parameters = {
     'balance_new_labels': False
 }
 
-bias_correction_parameters = {'correct_bias': True}
+bias_correction_parameters = {
+    'correct_bias': False,
+    'dynamic_weights': False
+}
 
 uncorrected_rocs_y = []
 corrected_rocs_y = []
@@ -97,10 +100,10 @@ for train_index, test_index in skf.split(X, y):
         framework.compute_correction_weights()
 
     # # Framework with CCP ##
-    # labeled = framework.ccp_correct(0.8)
+    # framework.ccp_correct(0.8)
 
     ## Framework with classic semi-supervised ##
-    framework.classic_correct()
+    framework.classic_correct(0.8)
 
     uncorr_roc = framework.evaluate_uncorrected()
     corr_roc = framework.evaluate_corrected()
