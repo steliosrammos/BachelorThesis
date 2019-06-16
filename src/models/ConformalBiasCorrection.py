@@ -48,14 +48,10 @@ class ConformalBiasCorrection:
         # Startified k-fold
         skf = StratifiedKFold(n_splits=10, random_state=self.random_state)
 
-        # if type(y) == np.ndarray:
-        #     prob_s_pos = np.bincount(y)[1] / len(y)
-        # else:
-
         prob_s_pos = y.loc[y == 1].shape[0] / y.shape[0]
 
-        predicted_prob_s = pd.Series(np.full(y.shape[0], np.nan))
-        predicted_prob_s.index = y.index
+        # predicted_prob_s = pd.Series(np.full(y.shape[0], np.nan))
+        # predicted_prob_s.index = y.index
 
         fold_num = 0
 
@@ -68,13 +64,15 @@ class ConformalBiasCorrection:
             clf_s = self.classifiers['classifier_s']
             clf_s.fit(X_train, y_train)
 
-            predicted_prob_s.loc[X_valid.index] = clf_s.predict_proba(X_valid)[:, 1]
+            predicted_prob_s = clf_s.predict_proba(X_valid)[:, 1]
+            predicted_prob_s = pd.Series(predicted_prob_s)
+            predicted_prob_s.index = X_valid.index
 
             for index in X_valid.index:
-                if predicted_prob_s.loc[index] > 0:
-                    self.train_data.loc[index, 'weight'] = prob_s_pos / predicted_prob_s.loc[index]
-                else:
-                    self.train_data.loc[index, 'weight'] = 0.001 / prob_s_pos
+                # if predicted_prob_s.loc[index] > 0:
+                self.train_data.loc[index, 'weight'] = prob_s_pos / predicted_prob_s.loc[index]
+                # else:
+                #     self.train_data.loc[index, 'weight'] = 0.001 / prob_s_pos
             fold_num += 1
 
         self.augmented_train_data = self.train_data
@@ -85,10 +83,13 @@ class ConformalBiasCorrection:
 
         return True
 
-    def update_correction_weights(self):
-        # print('Computing weights W...')
+    def update_correction_weights(self, data_lbld, data_unlbld):
 
-        data_s = self.augmented_train_data.drop(['class', 'weight'], axis=1)
+        # print('Updating weights W...')
+
+        data_s = self.train_data.drop(['class', 'weight'], axis=1)
+        data_s.loc[data_lbld.index.values, 'got_go'] = 1
+        data_s.loc[data_unlbld.index.values, 'got_go'] = 0
 
         # Shuffle rows
         X = data_s.drop('got_go', axis=1)
@@ -120,12 +121,15 @@ class ConformalBiasCorrection:
 
             for index in X_valid.index:
                 if predicted_prob_s.loc[index] > 0:
-                    self.augmented_train_data.loc[index, 'weight'] = prob_s_pos / predicted_prob_s.loc[index]
+                    data_s.loc[index, 'weight'] = prob_s_pos / predicted_prob_s.loc[index]
                 else:
-                    self.augmented_train_data.loc[index, 'weight'] = 0.001 / prob_s_pos
+                    data_s.loc[index, 'weight'] = 0.001 / prob_s_pos
             fold_num += 1
 
-        return True
+        data_lbld.weight = data_s.loc[data_lbld.index, 'weight']
+        # data_unlbld.weight = data_s.loc[data_unlbld.index, 'weight']
+
+        return data_lbld
 
     def visualize_weights(self):
         data = self.augmented_data_lbld
@@ -189,6 +193,10 @@ class ConformalBiasCorrection:
             else:
                 data_lbld = data_lbld.append(newly_labeled)
                 data_unlbld = data_unlbld[data_unlbld['class'].isna()]
+
+                if self.bias_correction_parameters['dynamic_weights']:
+                    data_lbld = self.update_correction_weights(data_lbld, data_unlbld)
+
                 cnt_labeled += newly_labeled.shape[0]
 
     def classic_predict(self, data_lbld, data_unlbld):
@@ -217,9 +225,8 @@ class ConformalBiasCorrection:
 
         # Initialize stopping variable
         stop = False
-        remain_unlbld = None
 
-        data_y = self.augmented_train_data.drop(['got_go'], axis=1)
+        data_y = self.train_data.drop(['got_go'], axis=1)
 
         data_lbld = data_y[~data_y['class'].isna()]
         data_unlbld = data_y[data_y['class'].isna()]
@@ -247,11 +254,13 @@ class ConformalBiasCorrection:
             else:
                 # Add best instances to the labeled set
                 data_unlbld.loc[labels.index.values, 'class'] = labels.values
-                new = data_unlbld.loc[labels.index.values]
-                data_lbld = data_lbld.append(new)
+                data_lbld = data_lbld.append(data_unlbld.loc[labels.index.values])
 
                 # Drop those instances from the unlabeled set
                 data_unlbld = data_unlbld.drop(labels.index.values)
+
+                if self.bias_correction_parameters['dynamic_weights']:
+                    data_lbld = self.update_correction_weights(data_lbld, data_unlbld)
 
                 # Update confirmed additions
                 cnt_labeled += labels.shape[0]
@@ -439,5 +448,5 @@ class ConformalBiasCorrection:
         predicted_proba = calibrated_model.predict_proba(X_test)[:, 1]
         corrected_roc_auc = roc_auc_score(y_test.values, predicted_proba)
 
-        print("Corrected ROC: ", corrected_roc_auc)
+        print("Corrected ROC: {} \n".format(corrected_roc_auc))
         return corrected_roc_auc

@@ -65,8 +65,8 @@ rebalancing_parameters = {
 }
 
 bias_correction_parameters = {
-    'correct_bias': False,
-    'dynamic_weights': False
+    'correct_bias': True,
+    'dynamic_weights': True
 }
 
 uncorrected_rocs_y = []
@@ -99,7 +99,7 @@ for train_index, test_index in skf.split(X, y):
     if bias_correction_parameters['correct_bias']:
         framework.compute_correction_weights()
 
-    # # Framework with CCP ##
+    ## Framework with CCP ##
     # framework.ccp_correct(0.8)
 
     ## Framework with classic semi-supervised ##
@@ -110,7 +110,6 @@ for train_index, test_index in skf.split(X, y):
 
     uncorrected_rocs_y.append(uncorr_roc)
     corrected_rocs_y.append(corr_roc)
-    # all_labeled.append(labeled)
 
 t_score, p_value = stats.ttest_ind(uncorrected_rocs_y, corrected_rocs_y, equal_var=False)
 print('Mean uncorrected ROC: {}'.format(np.array(uncorrected_rocs_y).mean()))
