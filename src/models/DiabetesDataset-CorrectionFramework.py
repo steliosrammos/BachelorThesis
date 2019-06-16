@@ -103,7 +103,7 @@ for train_index, test_index in skf.split(X, y):
     # framework.ccp_correct(0.8)
 
     ## Framework with classic semi-supervised ##
-    framework.classic_correct(0.8)
+    # framework.classic_correct(0.8)
 
     uncorr_roc = framework.evaluate_uncorrected()
     corr_roc = framework.evaluate_corrected()
