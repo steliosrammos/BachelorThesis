@@ -21,16 +21,16 @@ warnings.filterwarnings('ignore')
 
 # Import data
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
-data = pd.read_csv(base_path+"data/external/diabetes.csv", sep=",")
+data = pd.read_csv(base_path+'data/external/diabetes.csv', sep=',')
 
 # Change class to integer
 map = {'tested_positive': 1, 'tested_negative': 0}
-data["class"] = data["class"].map(map)
+data['class'] = data['class'].map(map)
 
 got_go = pd.Series(np.ones(data.shape[0]))
 data.insert(data.shape[1] - 1, value=got_go, column='got_go')
 
-data["weight"] = 1
+data['weight'] = 1
 
 X = data.drop(['class', 'got_go', 'weight'], axis=1)
 y = data.loc[:, 'class']
@@ -75,44 +75,42 @@ num_runs = 1
 
 all_labeled = []
 
-skf = StratifiedKFold(100, random_state=None)
+skf = StratifiedKFold(10, random_state=None)
 
-for i in range(0, num_runs):
+for train_index, test_index in skf.split(X, y):
 
-    for train_index, test_index in skf.split(X, y):
+    train_data = data.iloc[train_index, :]
+    test_data = data.iloc[test_index, :]
 
-        train_data = data.iloc[train_index, :]
-        test_data = data.iloc[test_index, :]
+    biased_train_data = train_data.copy()
+    biased_train_data.loc[(biased_train_data.age < 25) | (biased_train_data.pedi > 1), 'got_go'] = 0
+    biased_train_data.loc[(biased_train_data.age < 25) | (biased_train_data.pedi > 1), 'class'] = np.nan
 
-        biased_train_data = train_data.copy()
-        biased_train_data.loc[(biased_train_data.age < 25) | (biased_train_data.pedi > 1) | (biased_train_data.skin == 0), 'got_go'] = 0
-        biased_train_data.loc[(biased_train_data.age < 25) | (biased_train_data.pedi > 1) | (biased_train_data.skin == 0), 'class'] = np.nan
+    framework = ConformalBiasCorrection(train_data=biased_train_data, test_data=test_data, classifiers=classifiers,
+                                        clf_parameters=clf_parameters,
+                                        rebalancing_parameters=rebalancing_parameters,
+                                        bias_correction_parameters=bias_correction_parameters)
+    framework.verbose = 1
+    framework.random_state = None
 
-        framework = ConformalBiasCorrection(train_data=biased_train_data, test_data=test_data, classifiers=classifiers,
-                                            clf_parameters=clf_parameters,
-                                            rebalancing_parameters=rebalancing_parameters,
-                                            bias_correction_parameters=bias_correction_parameters)
-        framework.verbose = 1
-        framework.random_state = None
+    if bias_correction_parameters['correct_bias']:
+        framework.compute_correction_weights()
 
-        if bias_correction_parameters['correct_bias']:
-            framework.compute_correction_weights()
+    # # Framework with CCP ##
+    # labeled = framework.ccp_correct(0.8)
 
-        # # Framework with CCP ##
-        labeled = framework.ccp_correct(0.8)
+    ## Framework with classic semi-supervised ##
+    framework.classic_correct()
 
-        ## Framework with classic semi-supervised ##
-        # framework.classic_correct()
+    uncorr_roc = framework.evaluate_uncorrected()
+    corr_roc = framework.evaluate_corrected()
 
-        uncorr_roc = framework.evaluate_uncorrected()
-        corr_roc = framework.evaluate_corrected()
-
-        uncorrected_rocs_y.append(uncorr_roc)
-        corrected_rocs_y.append(corr_roc)
-        # all_labeled.append(labeled)
+    uncorrected_rocs_y.append(uncorr_roc)
+    corrected_rocs_y.append(corr_roc)
+    # all_labeled.append(labeled)
 
 t_score, p_value = stats.ttest_ind(uncorrected_rocs_y, corrected_rocs_y, equal_var=False)
-print("Mean uncorrected ROC: {}".format(np.array(uncorrected_rocs_y).mean()))
-print("Mean corrected ROC: {}".format(np.array(corrected_rocs_y).mean()))
-print("T-score: {} ".format(t_score))
-print("P-value: {} \n".format(p_value))
+print('Mean uncorrected ROC: {}'.format(np.array(uncorrected_rocs_y).mean()))
+print('Mean corrected ROC: {}'.format(np.array(corrected_rocs_y).mean()))
+print('T-score: {} '.format(t_score))
+print('P-value: {} \n'.format(p_value))
