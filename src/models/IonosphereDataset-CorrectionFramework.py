@@ -22,6 +22,8 @@ warnings.filterwarnings('ignore')
 # Import data
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
 data = pd.read_csv(base_path+'data/external/ionosphere.csv', sep=',')
+print(data.shape[0])
+exit()
 
 # Change class to integer
 map = {'g': 1, 'b': 0}
@@ -66,7 +68,7 @@ rebalancing_parameters = {
 
 bias_correction_parameters = {
     'correct_bias': True,
-    'dynamic_weights': False
+    'dynamic_weights': True
 }
 
 uncorrected_rocs_y = []
@@ -78,7 +80,7 @@ num_runs = 1
 
 all_labeled = []
 
-skf = StratifiedKFold(10, random_state=None)
+skf = StratifiedKFold(30, random_state=None)
 
 for train_index, test_index in skf.split(X, y):
 
@@ -99,11 +101,11 @@ for train_index, test_index in skf.split(X, y):
     if bias_correction_parameters['correct_bias']:
         framework.compute_correction_weights()
 
-    ## Framework with CCP ##
-    # framework.ccp_correct(0.8)
-
     ## Framework with classic semi-supervised ##
     # framework.classic_correct(0.8)
+
+    ## Framework with CCP ##
+    framework.ccp_correct(0.8)
 
     uncorr_roc = framework.evaluate_uncorrected()
     corr_roc = framework.evaluate_corrected()

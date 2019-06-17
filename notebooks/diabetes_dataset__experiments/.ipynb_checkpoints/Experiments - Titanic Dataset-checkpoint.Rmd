@@ -12,7 +12,7 @@ jupyter:
     name: python3
 ---
 
-# Experiments Diabetes Dataset
+# Experiments Titanic Dataset
 
 ```{python}
 import pandas as pd
@@ -28,15 +28,28 @@ from sklearn.model_selection import train_test_split
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
 
 # Select dataset
-data = pd.read_csv(base_path+"data/external/diabetes.csv", sep=",")
-
-# # Change class to integer
-map = {'tested_positive': 1, 'tested_negative': 0}
-data["class"] = data["class"].map(map)
+data = pd.read_csv(base_path+"data/external/parkinsons.data", sep=",")
+data = data.drop('name', axis=1)
+data.head()
 ```
 
 ```{python}
+data.columns
+```
+
+```{python}
+status = data['status']
+data = data.drop('status', axis=1)
+data['class'] = status
 data.head()
+```
+
+```{python}
+data.to_csv('/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/data/external/parkinson.csv', sep=';', index=False)
+```
+
+```{python}
+data['class'].value_counts(True)
 ```
 
 ```{python}
@@ -44,34 +57,10 @@ data.shape
 ```
 
 ```{python}
-test_data = data.iloc[:150,:]
-train_data = data.iloc[150:,:]
-```
-
-```{python}
-test_data.to_csv(base_path+"data/external/test_diabetes.csv", sep=";", index=False)
-train_data.to_csv(base_path+"data/external/train_diabetes.csv", sep=";", index=False)
+data.describe()
 ```
 
 # Unbiased Model
-
-```{python}
-train_data = pd.read_csv(base_path+"data/external/train_diabetes.csv", sep=";")
-test_data = pd.read_csv(base_path+"data/external/test_diabetes.csv", sep=";")
-```
-
-```{python}
-train_data.shape
-```
-
-```{python}
-classifier_s = XGBClassifier(random_state=1)
-```
-
-```{python}
-X_train, y_train = train_data.iloc[:, :-1], train_data.iloc[:, -1]
-X_test, y_test = test_data.iloc[:, :-1], test_data.iloc[:, -1]
-```
 
 ```{python}
 roc_scores = []
@@ -79,7 +68,7 @@ roc_scores = []
 X = data.iloc[:, :-1]
 y = data.iloc[:, -1]
 
-skf = StratifiedKFold(20)
+skf = StratifiedKFold(10)
 
 for train_index, test_index in skf.split(X, y):
     
@@ -93,18 +82,14 @@ for train_index, test_index in skf.split(X, y):
 
     roc_score = roc_auc_score(y_test, predicted_probas)
     roc_scores.append(roc_score)
-
-print("ROC: {0:9.4f} \n".format(np.array(roc_scores).mean()))
+    
+print("ROC: {0:9.4f} \n".format(np.array(roc_score).mean()))
 ```
 
 # Biased Model
 
 ```{python}
-# Let's introduce a selection bias
-```
-
-```{python}
-biased_data = train_data.copy()
+biased_data = data.copy()
 
 got_go = pd.Series(np.ones(biased_data.shape[0]))
 biased_data.insert(biased_data.shape[1]-1,value=got_go, column="got_go")
@@ -112,12 +97,16 @@ biased_data.head()
 ```
 
 ```{python}
-biased_data.loc[(biased_data.age < 25) | (biased_data.pedi > 1) | (biased_data.skin == 0), 'got_go'] = 0
-biased_data.loc[(biased_data.age < 25) | (biased_data.pedi > 1) | (biased_data.skin == 0), 'class'] = np.nan
+biased_data.loc[(biased_data['MDVP:Fo(Hz)'] < 120), 'got_go'] = 0
+biased_data.loc[(biased_data['MDVP:Fo(Hz)'] < 120), 'class'] = np.nan
 ```
 
 ```{python}
 biased_data.shape
+```
+
+```{python}
+biased_data.head()
 ```
 
 ```{python}

@@ -155,7 +155,8 @@ class ConformalBiasCorrection:
         stop = False
 
         while not stop:
-            threshold = 0.96
+            # threshold = 0.96
+            threshold = 0.84
 
             predictions = self.classic_predict(data_lbld, data_unlbld)
 
@@ -241,7 +242,8 @@ class ConformalBiasCorrection:
             ccp_predictions = self.ccp_predict(data_lbld, data_unlbld)
 
             # Get best prediction indeces and values
-            labels = self.get_best_pred_indeces(ccp_predictions, 0.96)
+            # labels = self.get_best_pred_indeces(ccp_predictions, 0.95)
+            labels = self.get_best_pred_indeces(ccp_predictions, 0.9)
 
             # Update counters
             new_labeled += labels.shape[0]

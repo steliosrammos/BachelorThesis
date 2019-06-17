@@ -21,15 +21,13 @@ warnings.filterwarnings('ignore')
 
 # Import data
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
-data = pd.read_csv(base_path+'data/external/diabetes.csv', sep=',')
-print(data.shape[0])
-exit()
-# Change class to integer
-map = {'tested_positive': 1, 'tested_negative': 0}
-data['class'] = data['class'].map(map)
+data = pd.read_csv(base_path+'data/external/parkinson.csv', sep=';')
 
 got_go = pd.Series(np.ones(data.shape[0]))
 data.insert(data.shape[1] - 1, value=got_go, column='got_go')
+
+# print(data.shape[0])
+# exit()
 
 data['weight'] = 1
 
@@ -87,8 +85,8 @@ for train_index, test_index in skf.split(X, y):
     test_data = data.iloc[test_index, :]
 
     biased_train_data = train_data.copy()
-    biased_train_data.loc[(biased_train_data.age < 25) | (biased_train_data.pedi > 1), 'got_go'] = 0
-    biased_train_data.loc[(biased_train_data.age < 25) | (biased_train_data.pedi > 1), 'class'] = np.nan
+    biased_train_data.loc[(biased_train_data['MDVP:Fo(Hz)'] < 120) | (biased_train_data['MDVP:Flo(Hz)'] > 130), 'class'] = np.nan
+    biased_train_data.loc[(biased_train_data['MDVP:Fo(Hz)'] < 120) | (biased_train_data['MDVP:Flo(Hz)'] > 130), 'got_go'] = 0
 
     framework = ConformalBiasCorrection(train_data=biased_train_data, test_data=test_data, classifiers=classifiers,
                                         clf_parameters=clf_parameters,
