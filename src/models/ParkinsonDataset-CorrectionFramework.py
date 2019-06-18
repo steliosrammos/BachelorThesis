@@ -65,7 +65,7 @@ rebalancing_parameters = {
 
 bias_correction_parameters = {
     'correct_bias': True,
-    'dynamic_weights': True
+    'dynamic_weights': False
 }
 
 uncorrected_rocs_y = []

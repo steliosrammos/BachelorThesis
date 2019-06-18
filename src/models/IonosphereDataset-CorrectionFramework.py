@@ -22,8 +22,6 @@ warnings.filterwarnings('ignore')
 # Import data
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
 data = pd.read_csv(base_path+'data/external/ionosphere.csv', sep=',')
-print(data.shape[0])
-exit()
 
 # Change class to integer
 map = {'g': 1, 'b': 0}

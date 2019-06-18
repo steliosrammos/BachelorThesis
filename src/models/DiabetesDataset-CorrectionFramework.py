@@ -22,8 +22,7 @@ warnings.filterwarnings('ignore')
 # Import data
 base_path = '/Users/steliosrammos/Documents/Education/Maastricht/DKE-Year3/BachelorThesis/bachelor_thesis/'
 data = pd.read_csv(base_path+'data/external/diabetes.csv', sep=',')
-print(data.shape[0])
-exit()
+
 # Change class to integer
 map = {'tested_positive': 1, 'tested_negative': 0}
 data['class'] = data['class'].map(map)
