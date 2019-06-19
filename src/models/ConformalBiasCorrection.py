@@ -43,6 +43,7 @@ class ConformalBiasCorrection:
 
         # Shuffle rows
         X = data_s.drop('got_go', axis=1)
+        X = X.fillna(X.mean())
         y = data_s.loc[:, 'got_go']
 
         # Startified k-fold
@@ -93,6 +94,7 @@ class ConformalBiasCorrection:
 
         # Shuffle rows
         X = data_s.drop('got_go', axis=1)
+        X = X.fillna(X.mean())
         y = data_s.loc[:, 'got_go']
 
         # Startified k-fold
